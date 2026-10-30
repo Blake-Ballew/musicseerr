@@ -4,7 +4,9 @@ import type {
   Permission,
   PermissionCheckOptions,
 } from '@server/lib/permissions';
+import { getProxyUser, proxyAuthEnabled } from '@server/lib/proxyAuth';
 import { getSettings } from '@server/lib/settings';
+import logger from '@server/logger';
 
 export const checkUser: Middleware = async (req, _res, next) => {
   const settings = getSettings();
@@ -27,6 +29,18 @@ export const checkUser: Middleware = async (req, _res, next) => {
     user = await userRepository.findOne({
       where: { id: req.session.userId },
     });
+  } else if (proxyAuthEnabled() && req.session) {
+    try {
+      user = await getProxyUser(req.headers);
+      if (user) {
+        req.session.userId = user.id;
+      }
+    } catch (e) {
+      logger.error('Proxy authentication failed', {
+        label: 'Auth',
+        errorMessage: e.message,
+      });
+    }
   }
 
   if (user) {
