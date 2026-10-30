@@ -216,7 +216,7 @@ const LidarrModal = ({ onClose, lidarr, onSave }: LidarrModalProps) => {
           isDefault: lidarr?.isDefault ?? false,
           is4k: lidarr?.is4k ?? false,
           externalUrl: lidarr?.externalUrl,
-          syncEnabled: lidarr?.syncEnabled ?? false,
+          syncEnabled: lidarr?.syncEnabled ?? true,
           enableSearch: !lidarr?.preventSearch,
           tagRequests: lidarr?.tagRequests ?? false,
         }}
