@@ -15,13 +15,15 @@ const messages = defineMessages('components.MusicRequestModal', {
   requestadmin: 'This request will be approved automatically.',
   requestSuccess: '<strong>{title}</strong> requested successfully!',
   requestalbumtitle: 'Request Album',
+  requesting: 'Requesting…',
+  pendingDescription:
+    'An admin will review your request before it is sent to Lidarr.',
   requesterror: 'Something went wrong while submitting the request.',
   pendingapproval: 'Your request is pending approval.',
   requestCancel: 'Request for <strong>{title}</strong> canceled.',
 });
 
-interface MusicAlbumRequestModalProps
-  extends React.HTMLAttributes<HTMLDivElement> {
+interface MusicAlbumRequestModalProps extends React.HTMLAttributes<HTMLDivElement> {
   musicBrainzId: string;
   albumTitle: string;
   artistName: string;
@@ -87,11 +89,14 @@ const MusicAlbumRequestModal = ({
           { appearance: 'success', autoDismiss: true }
         );
       }
-    } catch {
-      addToast(intl.formatMessage(messages.requesterror), {
-        appearance: 'error',
-        autoDismiss: true,
-      });
+    } catch (e) {
+      addToast(
+        e?.response?.data?.message ?? intl.formatMessage(messages.requesterror),
+        {
+          appearance: 'error',
+          autoDismiss: true,
+        }
+      );
     } finally {
       setIsUpdating(false);
     }
@@ -115,7 +120,7 @@ const MusicAlbumRequestModal = ({
       title={intl.formatMessage(messages.requestalbumtitle)}
       okText={
         isUpdating
-          ? intl.formatMessage(messages.requestalbumtitle)
+          ? intl.formatMessage(messages.requesting)
           : intl.formatMessage(messages.requestalbumtitle)
       }
       okDisabled={isUpdating}
@@ -152,11 +157,20 @@ const MusicAlbumRequestModal = ({
             <p className="text-gray-400">{artistName}</p>
           </div>
         </div>
-        {hasPermission(
-          [Permission.AUTO_APPROVE, Permission.MANAGE_REQUESTS],
-          { type: 'or' }
-        ) && (
-          <Alert title={intl.formatMessage(messages.requestadmin)} type="info" />
+        {hasPermission([Permission.AUTO_APPROVE, Permission.MANAGE_REQUESTS], {
+          type: 'or',
+        }) ? (
+          <Alert
+            title={intl.formatMessage(messages.requestadmin)}
+            type="info"
+          />
+        ) : (
+          <Alert
+            title={intl.formatMessage(messages.pendingapproval)}
+            type="info"
+          >
+            {intl.formatMessage(messages.pendingDescription)}
+          </Alert>
         )}
       </div>
     </Modal>
