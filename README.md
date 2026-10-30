@@ -9,6 +9,8 @@ A music request manager for Lidarr, built on [Seerr](https://github.com/seerr-te
 - Seerr's users, permissions, approvals and notifications (Discord, email, ntfy, webhooks and more)
 - Requests are marked available once Lidarr has imported the album (checked every 10 minutes)
 - Sign in with Jellyfin, Emby, Plex or Navidrome accounts, or through a forward-auth proxy such as Authentik
+- Keeps working when musicbrainz.org is unreachable (outages, or MetaBrainz blocking your IP) by falling back to Lidarr's metadata service, which serves the same IDs
+- Artist photos and backdrops from Lidarr's metadata, with no fanart.tv key needed
 
 ## Run with Docker
 

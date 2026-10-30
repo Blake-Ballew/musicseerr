@@ -48,7 +48,8 @@ interface DiscoverPopularResult {
   tracks: DiscoverPopularTrack[];
 }
 
-let popularCache: { data: DiscoverPopularResult; fetchedAt: number } | null = null;
+let popularCache: { data: DiscoverPopularResult; fetchedAt: number } | null =
+  null;
 const POPULAR_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
 // Run up to `concurrency` tasks at a time, waiting `delayMs` between batches.
@@ -103,12 +104,17 @@ musicRoutes.get('/search', async (req, res, next) => {
       // Artists have `name` but no `title`; skip filtering them
       if (!('title' in result)) return true;
 
-      const secondaryTypes = (result.secondaryTypes ?? []).map((s) => s.toLowerCase());
+      const secondaryTypes = (result.secondaryTypes ?? []).map((s) =>
+        s.toLowerCase()
+      );
       const disambig = (result.disambiguation ?? '').toLowerCase();
       const titleLower = (result.title ?? '').toLowerCase();
 
       // Always remove Interview / Spokenword
-      if (secondaryTypes.includes('interview') || secondaryTypes.includes('spokenword')) {
+      if (
+        secondaryTypes.includes('interview') ||
+        secondaryTypes.includes('spokenword')
+      ) {
         return false;
       }
 
@@ -121,7 +127,8 @@ musicRoutes.get('/search', async (req, res, next) => {
       // Remove bootlegs unless opted in
       if (!includeBootlegs) {
         if (secondaryTypes.includes('bootleg')) return false;
-        if (disambig.includes('bootleg') || titleLower.includes('bootleg')) return false;
+        if (disambig.includes('bootleg') || titleLower.includes('bootleg'))
+          return false;
       }
 
       return true;
@@ -130,7 +137,9 @@ musicRoutes.get('/search', async (req, res, next) => {
     // ------------------------------------------------------------------
     // Smart result ordering
     // ------------------------------------------------------------------
-    const artistResults = filtered.filter((r) => 'name' in r && !('title' in r));
+    const artistResults = filtered.filter(
+      (r) => 'name' in r && !('title' in r)
+    );
     const albumResultsFiltered = filtered.filter((r) => 'title' in r);
 
     // Determine ordering: if any artist has a high MusicBrainz score (>=85),
@@ -232,30 +241,45 @@ musicRoutes.get('/search', async (req, res, next) => {
 musicRoutes.get('/discover/popular', async (req, res, next) => {
   try {
     // Cache hit
-    if (popularCache && Date.now() - popularCache.fetchedAt < POPULAR_CACHE_TTL) {
+    if (
+      popularCache &&
+      Date.now() - popularCache.fetchedAt < POPULAR_CACHE_TTL
+    ) {
       return res.status(200).json(popularCache.data);
     }
 
     // Fetch from Deezer (no auth required)
     const [artistsRes, albumsRes, tracksRes] = await Promise.allSettled([
-      axios.get<{ data: DeezerArtist[] }>('https://api.deezer.com/chart/0/artists?limit=20'),
-      axios.get<{ data: DeezerAlbum[] }>('https://api.deezer.com/chart/0/albums?limit=20'),
-      axios.get<{ data: DeezerTrack[] }>('https://api.deezer.com/chart/0/tracks?limit=20'),
+      axios.get<{ data: DeezerArtist[] }>(
+        'https://api.deezer.com/chart/0/artists?limit=20'
+      ),
+      axios.get<{ data: DeezerAlbum[] }>(
+        'https://api.deezer.com/chart/0/albums?limit=20'
+      ),
+      axios.get<{ data: DeezerTrack[] }>(
+        'https://api.deezer.com/chart/0/tracks?limit=20'
+      ),
     ]);
 
     const deezerArtists: DeezerArtist[] =
-      artistsRes.status === 'fulfilled' ? artistsRes.value.data.data ?? [] : [];
+      artistsRes.status === 'fulfilled'
+        ? (artistsRes.value.data.data ?? [])
+        : [];
     const deezerAlbums: DeezerAlbum[] =
-      albumsRes.status === 'fulfilled' ? albumsRes.value.data.data ?? [] : [];
+      albumsRes.status === 'fulfilled' ? (albumsRes.value.data.data ?? []) : [];
     const deezerTracks: DeezerTrack[] =
-      tracksRes.status === 'fulfilled' ? tracksRes.value.data.data ?? [] : [];
+      tracksRes.status === 'fulfilled' ? (tracksRes.value.data.data ?? []) : [];
 
     const mb = createMusicBrainz();
 
     // Look up MBIDs for artists
     const artistTasks = deezerArtists.map(
       (da) => async (): Promise<DiscoverPopularArtist> => {
-        const searchResult = await mb.searchArtists({ query: da.name, limit: 1, offset: 0 });
+        const searchResult = await mb.searchArtists({
+          query: da.name,
+          limit: 1,
+          offset: 0,
+        });
         const top = searchResult.results[0];
         if (!top || !('name' in top)) throw new Error('No artist match');
         return {
@@ -271,7 +295,11 @@ musicRoutes.get('/discover/popular', async (req, res, next) => {
     const albumTasks = deezerAlbums.map(
       (da) => async (): Promise<DiscoverPopularAlbum> => {
         const albumQuery = `${da.title} artist:${da.artist?.name ?? ''}`;
-        const searchResult = await mb.searchAlbums({ query: albumQuery, limit: 1, offset: 0 });
+        const searchResult = await mb.searchAlbums({
+          query: albumQuery,
+          limit: 1,
+          offset: 0,
+        });
         const top = searchResult.results[0];
         if (!top || !('title' in top)) throw new Error('No album match');
         return {
@@ -290,22 +318,30 @@ musicRoutes.get('/discover/popular', async (req, res, next) => {
     ]);
 
     const artists: DiscoverPopularArtist[] = artistSettled
-      .filter((r): r is PromiseFulfilledResult<DiscoverPopularArtist> => r.status === 'fulfilled')
+      .filter(
+        (r): r is PromiseFulfilledResult<DiscoverPopularArtist> =>
+          r.status === 'fulfilled'
+      )
       .map((r) => r.value);
 
     const albums: DiscoverPopularAlbum[] = albumSettled
-      .filter((r): r is PromiseFulfilledResult<DiscoverPopularAlbum> => r.status === 'fulfilled')
+      .filter(
+        (r): r is PromiseFulfilledResult<DiscoverPopularAlbum> =>
+          r.status === 'fulfilled'
+      )
       .map((r) => r.value);
 
     // Tracks — no MBID lookup needed
-    const tracks: DiscoverPopularTrack[] = deezerTracks.slice(0, 20).map((dt) => ({
-      title: dt.title,
-      artistName: dt.artist?.name ?? '',
-      artistImageUrl: dt.artist?.picture_medium ?? dt.artist?.picture ?? '',
-      albumTitle: dt.album?.title ?? '',
-      albumImageUrl: dt.album?.cover_medium ?? dt.album?.cover ?? '',
-      duration: dt.duration ?? 0,
-    }));
+    const tracks: DiscoverPopularTrack[] = deezerTracks
+      .slice(0, 20)
+      .map((dt) => ({
+        title: dt.title,
+        artistName: dt.artist?.name ?? '',
+        artistImageUrl: dt.artist?.picture_medium ?? dt.artist?.picture ?? '',
+        albumTitle: dt.album?.title ?? '',
+        albumImageUrl: dt.album?.cover_medium ?? dt.album?.cover ?? '',
+        duration: dt.duration ?? 0,
+      }));
 
     const data: DiscoverPopularResult = { artists, albums, tracks };
 
@@ -350,7 +386,12 @@ interface DeezerTrack {
   id: number;
   title: string;
   duration?: number;
-  artist?: { id: number; name: string; picture?: string; picture_medium?: string };
+  artist?: {
+    id: number;
+    name: string;
+    picture?: string;
+    picture_medium?: string;
+  };
   album?: { id: number; title: string; cover?: string; cover_medium?: string };
 }
 
@@ -452,7 +493,7 @@ musicRoutes.get('/album/:id', async (req, res, next) => {
     });
     const bestRelease = sortedReleases[0];
     const releaseDetail = bestRelease
-      ? await mb.getRelease(bestRelease.id)
+      ? await mb.getRelease(bestRelease.id, req.params.id)
       : null;
 
     // Get artist info

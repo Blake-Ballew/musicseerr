@@ -13,6 +13,7 @@ import type {
   MusicReleaseDetail,
   MusicSearchResults,
 } from './interfaces';
+import LidarrMetadata from './lidarrMetadata';
 
 const MUSICBRAINZ_API_URL = 'https://musicbrainz.org/ws/2';
 const COVERART_API_URL = 'https://coverartarchive.org';
@@ -53,6 +54,25 @@ const cached = async <T>(
   return value;
 };
 
+// When musicbrainz.org is unreachable (outage, or MetaBrainz blocking the
+// server's IP), fall back to Lidarr's metadata service for a while instead
+// of failing every page
+const FALLBACK_WINDOW_MS = 5 * 60 * 1000;
+let musicBrainzUnavailableUntil = 0;
+const lidarrMetadata = new LidarrMetadata();
+
+const isUnavailableError = (e: unknown): boolean => {
+  let err = e as
+    | { cause?: unknown; response?: { status?: number } }
+    | undefined;
+  // Our methods wrap the axios error as `cause`
+  while (err?.cause && !err.response) {
+    err = err.cause as typeof err;
+  }
+  const status = err?.response?.status;
+  return status === undefined || status === 429 || status >= 500;
+};
+
 class MusicBrainz extends ExternalAPI {
   private fanartApiKey: string | null = null;
   private lastfmApiKey: string | null = null;
@@ -74,6 +94,29 @@ class MusicBrainz extends ExternalAPI {
     this.lastfmApiKey = lastfmApiKey ?? null;
   }
 
+  private async withFallback<T>(
+    what: string,
+    primary: () => Promise<T>,
+    fallback: () => Promise<T>
+  ): Promise<T> {
+    if (Date.now() < musicBrainzUnavailableUntil) {
+      return fallback();
+    }
+    try {
+      return await primary();
+    } catch (e) {
+      if (!isUnavailableError(e)) {
+        throw e;
+      }
+      musicBrainzUnavailableUntil = Date.now() + FALLBACK_WINDOW_MS;
+      logger.warn(
+        'MusicBrainz is unreachable, using Lidarr metadata for the next 5 minutes',
+        { label: 'MusicBrainz', what, errorMessage: (e as Error).message }
+      );
+      return fallback();
+    }
+  }
+
   private async rateLimitedRequest<T>(
     path: string,
     params?: Record<string, string | number | undefined>
@@ -90,7 +133,7 @@ class MusicBrainz extends ExternalAPI {
     });
   }
 
-  public async searchArtists({
+  private async mbSearchArtists({
     query,
     limit = 25,
     offset = 0,
@@ -129,7 +172,7 @@ class MusicBrainz extends ExternalAPI {
     }
   }
 
-  public async searchAlbums({
+  private async mbSearchAlbums({
     query,
     limit = 25,
     offset = 0,
@@ -203,7 +246,7 @@ class MusicBrainz extends ExternalAPI {
     }
   }
 
-  public async getArtist(mbId: string): Promise<MusicArtistResult> {
+  private async mbGetArtist(mbId: string): Promise<MusicArtistResult> {
     try {
       const data = await this.rateLimitedRequest<MusicBrainzArtist>(
         `/artist/${mbId}`,
@@ -223,7 +266,7 @@ class MusicBrainz extends ExternalAPI {
     }
   }
 
-  public async getAlbum(mbId: string): Promise<MusicAlbumResult> {
+  private async mbGetAlbum(mbId: string): Promise<MusicAlbumResult> {
     try {
       const data = await this.rateLimitedRequest<MusicBrainzReleaseGroup>(
         `/release-group/${mbId}`,
@@ -243,7 +286,7 @@ class MusicBrainz extends ExternalAPI {
     }
   }
 
-  public async getArtistAlbums(
+  private async mbGetArtistAlbums(
     artistMbId: string,
     {
       limit = 100,
@@ -279,7 +322,75 @@ class MusicBrainz extends ExternalAPI {
     }
   }
 
+  public async searchArtists(params: {
+    query: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<MusicSearchResults> {
+    return this.withFallback(
+      'searchArtists',
+      () => this.mbSearchArtists(params),
+      () =>
+        lidarrMetadata.searchArtists(
+          params.query,
+          params.limit ?? 25,
+          params.offset ?? 0
+        )
+    );
+  }
+
+  public async searchAlbums(params: {
+    query: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<MusicSearchResults> {
+    return this.withFallback(
+      'searchAlbums',
+      () => this.mbSearchAlbums(params),
+      () =>
+        lidarrMetadata.searchAlbums(
+          params.query,
+          params.limit ?? 25,
+          params.offset ?? 0
+        )
+    );
+  }
+
+  public async getArtist(mbId: string): Promise<MusicArtistResult> {
+    return this.withFallback(
+      'getArtist',
+      () => this.mbGetArtist(mbId),
+      () => lidarrMetadata.getArtist(mbId)
+    );
+  }
+
+  public async getAlbum(mbId: string): Promise<MusicAlbumResult> {
+    return this.withFallback(
+      'getAlbum',
+      () => this.mbGetAlbum(mbId),
+      () => lidarrMetadata.getAlbum(mbId)
+    );
+  }
+
+  public async getArtistAlbums(
+    artistMbId: string,
+    options: { limit?: number; offset?: number; type?: string } = {}
+  ): Promise<MusicAlbumResult[]> {
+    return this.withFallback(
+      'getArtistAlbums',
+      () => this.mbGetArtistAlbums(artistMbId, options),
+      () => lidarrMetadata.getArtistAlbums(artistMbId, options)
+    );
+  }
+
   public async getCoverArt(releaseGroupId: string): Promise<string | null> {
+    if (Date.now() < musicBrainzUnavailableUntil) {
+      return lidarrMetadata.getCoverArt(releaseGroupId).catch(() => null);
+    }
+    return this.caaGetCoverArt(releaseGroupId);
+  }
+
+  private async caaGetCoverArt(releaseGroupId: string): Promise<string | null> {
     try {
       const response = await cached(`caa:${releaseGroupId}`, () =>
         this.axios
@@ -308,9 +419,12 @@ class MusicBrainz extends ExternalAPI {
       }
 
       return null;
-    } catch {
-      // Cover art not available for every release group
-      return null;
+    } catch (e) {
+      // Cover art isn't available for every release group; if the archive
+      // itself is unreachable, use Lidarr's copy
+      return isUnavailableError(e)
+        ? lidarrMetadata.getCoverArt(releaseGroupId).catch(() => null)
+        : null;
     }
   }
 
@@ -318,7 +432,9 @@ class MusicBrainz extends ExternalAPI {
     artistMbId: string
   ): Promise<{ poster: string | null; fanart: string | null }> {
     if (!this.fanartApiKey) {
-      return { poster: null, fanart: null };
+      return lidarrMetadata
+        .getArtistImages(artistMbId)
+        .catch(() => ({ poster: null, fanart: null }));
     }
 
     try {
@@ -390,8 +506,14 @@ class MusicBrainz extends ExternalAPI {
   }
 
   public async getRelease(
-    releaseId: string
+    releaseId: string,
+    albumMbId?: string
   ): Promise<MusicReleaseDetail | null> {
+    const fallback = () =>
+      lidarrMetadata.getRelease(releaseId, albumMbId).catch(() => null);
+    if (Date.now() < musicBrainzUnavailableUntil) {
+      return fallback();
+    }
     try {
       const data = await this.rateLimitedRequest<MusicBrainzRelease>(
         `/release/${releaseId}`,
@@ -433,7 +555,7 @@ class MusicBrainz extends ExternalAPI {
         errorMessage: e.message,
         releaseId,
       });
-      return null;
+      return isUnavailableError(e) ? fallback() : null;
     }
   }
 
