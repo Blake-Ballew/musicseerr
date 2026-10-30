@@ -1,3 +1,4 @@
+import LidarrAPI from '@server/api/servarr/lidarr';
 import type { RadarrMovieOptions } from '@server/api/servarr/radarr';
 import RadarrAPI from '@server/api/servarr/radarr';
 import type {
@@ -5,7 +6,6 @@ import type {
   SonarrSeries,
 } from '@server/api/servarr/sonarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
-import LidarrAPI from '@server/api/servarr/lidarr';
 import TheMovieDb from '@server/api/themoviedb';
 import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
 import {
@@ -100,6 +100,40 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         mediaId: entity.id,
       });
     }
+  }
+
+  private async notifyAvailableMusic(
+    entity: MediaRequest,
+    event?: UpdateEvent<MediaRequest>
+  ) {
+    const latestMedia =
+      (await event?.manager?.findOne(Media, {
+        where: { id: entity.media.id },
+      })) ??
+      (await getRepository(Media).findOne({
+        where: { id: entity.media.id },
+      }));
+
+    if (latestMedia?.status !== MediaStatus.AVAILABLE) {
+      return;
+    }
+
+    const albumTitle = entity.albumTitle ?? 'Unknown Album';
+    const artistName = entity.artistName ?? 'Unknown Artist';
+
+    notificationManager.sendNotification(Notification.MEDIA_AVAILABLE, {
+      event: 'Album Request Now Available',
+      notifyAdmin: false,
+      notifySystem: true,
+      notifyUser: entity.requestedBy,
+      subject: `${albumTitle} - ${artistName}`,
+      message: `${albumTitle} by ${artistName} is now in the library.`,
+      media: latestMedia,
+      image: entity.musicBrainzId
+        ? `https://coverartarchive.org/release-group/${entity.musicBrainzId}/front-500`
+        : undefined,
+      request: entity,
+    });
   }
 
   private async notifyAvailableSeries(
@@ -935,14 +969,11 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         }
 
         if (media.status === MediaStatus.AVAILABLE) {
-          logger.warn(
-            'Music already exists, marking request as COMPLETED',
-            {
-              label: 'Media Request',
-              requestId: entity.id,
-              mediaId: entity.media.id,
-            }
-          );
+          logger.warn('Music already exists, marking request as COMPLETED', {
+            label: 'Media Request',
+            requestId: entity.id,
+            mediaId: entity.media.id,
+          });
 
           const requestRepository = getRepository(MediaRequest);
           entity.status = MediaRequestStatus.COMPLETED;
@@ -1290,6 +1321,9 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         }
         if (event.entity.media.mediaType === MediaType.TV) {
           await this.notifyAvailableSeries(event.entity as MediaRequest, event);
+        }
+        if (event.entity.media.mediaType === MediaType.MUSIC) {
+          await this.notifyAvailableMusic(event.entity as MediaRequest, event);
         }
       }
     } catch (e) {

@@ -10,7 +10,7 @@ interface ErrorCardProps {
   id: number;
   tmdbId: number;
   tvdbId?: number;
-  type: 'movie' | 'tv' | 'music';
+  type: 'movie' | 'tv' | 'music' | 'music-album' | 'music-artist';
   canExpand?: boolean;
 }
 

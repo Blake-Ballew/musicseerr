@@ -101,7 +101,6 @@ const MusicSearch = () => {
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder={intl.formatMessage(messages.searchplaceholder)}
               className="w-full rounded-lg border border-gray-600 bg-gray-800 py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
-              autoFocus
             />
           </div>
           {/* Filter toggles */}

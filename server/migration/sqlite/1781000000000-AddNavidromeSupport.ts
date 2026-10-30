@@ -12,7 +12,8 @@ export class AddNavidromeSupport1781000000000 implements MigrationInterface {
     );
   }
 
-  public async down(queryRunner: QueryRunner): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  public async down(_queryRunner: QueryRunner): Promise<void> {
     // SQLite doesn't support DROP COLUMN directly; no-op for down migration
   }
 }

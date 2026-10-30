@@ -85,7 +85,6 @@ const ServerInstance = ({
   hostname,
   port,
   profileName,
-  is4k = false,
   isDefault = false,
   isSSL = false,
   externalUrl,

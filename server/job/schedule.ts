@@ -8,8 +8,8 @@ import {
   jellyfinFullScanner,
   jellyfinRecentScanner,
 } from '@server/lib/scanners/jellyfin';
-import { plexFullScanner, plexRecentScanner } from '@server/lib/scanners/plex';
 import { lidarrScanner } from '@server/lib/scanners/lidarr';
+import { plexFullScanner, plexRecentScanner } from '@server/lib/scanners/plex';
 import { radarrScanner } from '@server/lib/scanners/radarr';
 import { sonarrScanner } from '@server/lib/scanners/sonarr';
 import type { JobId } from '@server/lib/settings';
@@ -178,12 +178,12 @@ export const startJobs = (): void => {
     cancelFn: () => sonarrScanner.cancel(),
   });
 
-  // Run full lidarr scan every 24 hours
+  // Run full lidarr scan every 10 minutes (it's the source of music availability)
   scheduledJobs.push({
     id: 'lidarr-scan',
     name: 'Lidarr Scan',
     type: 'process',
-    interval: 'hours',
+    interval: 'minutes',
     cronSchedule: jobs['lidarr-scan'].schedule,
     job: schedule.scheduleJob(jobs['lidarr-scan'].schedule, () => {
       logger.info('Starting scheduled job: Lidarr Scan', { label: 'Jobs' });

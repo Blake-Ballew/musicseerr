@@ -179,10 +179,9 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
       );
       return response.data;
     } catch (e) {
-      throw new Error(
-        `[Lidarr] Failed to lookup artist: ${e.message}`,
-        { cause: e }
-      );
+      throw new Error(`[Lidarr] Failed to lookup artist: ${e.message}`, {
+        cause: e,
+      });
     }
   };
 
@@ -196,10 +195,9 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
       );
       return response.data;
     } catch (e) {
-      throw new Error(
-        `[Lidarr] Failed to lookup album: ${e.message}`,
-        { cause: e }
-      );
+      throw new Error(`[Lidarr] Failed to lookup album: ${e.message}`, {
+        cause: e,
+      });
     }
   };
 
@@ -225,7 +223,28 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
     }
   };
 
+  // Returns the album only if it is already in the Lidarr library.
+  // (/album/lookup queries the metadata server and returns albums whether or
+  // not they have been added, so it can't be used as an existence check.)
   public getAlbumByForeignId = async (
+    foreignAlbumId: string
+  ): Promise<LidarrAlbum | undefined> => {
+    try {
+      const response = await this.axios.get<LidarrAlbum[]>('/album', {
+        params: { foreignAlbumId },
+      });
+      return response.data.find((a) => a.id > 0);
+    } catch (e) {
+      logger.error('Error retrieving album by foreign ID', {
+        label: 'Lidarr API',
+        errorMessage: e.message,
+        foreignAlbumId,
+      });
+      return undefined;
+    }
+  };
+
+  public lookupAlbumByForeignId = async (
     foreignAlbumId: string
   ): Promise<LidarrAlbum | undefined> => {
     try {
@@ -236,7 +255,7 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
       });
       return response.data[0];
     } catch (e) {
-      logger.error('Error retrieving album by foreign ID', {
+      logger.error('Error looking up album by foreign ID', {
         label: 'Lidarr API',
         errorMessage: e.message,
         foreignAlbumId,
@@ -325,19 +344,12 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
     options: LidarrAlbumOptions
   ): Promise<LidarrAlbum> => {
     try {
-      // First ensure the artist exists
-      const artist = await this.addArtist(options.artist);
-
-      // Check if album already exists
       const existingAlbum = await this.getAlbumByForeignId(
         options.foreignAlbumId
       );
 
       if (existingAlbum) {
-        if (
-          existingAlbum.statistics &&
-          existingAlbum.statistics.percentOfTracks === 100
-        ) {
+        if (existingAlbum.statistics?.percentOfTracks === 100) {
           logger.info(
             'Album already exists and is fully available. Skipping add.',
             {
@@ -348,50 +360,62 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
           return existingAlbum;
         }
 
-        // Album exists but not fully downloaded, monitor it
+        // Album is in the library but missing files: make sure it (and its
+        // artist) are monitored, then search
         if (!existingAlbum.monitored) {
-          const response = await this.axios.put<LidarrAlbum>(
-            `/album/${existingAlbum.id}`,
-            {
-              ...existingAlbum,
-              monitored: true,
-            }
-          );
+          await this.axios.put('/album/monitor', {
+            albumIds: [existingAlbum.id],
+            monitored: true,
+          });
 
           logger.info('Set existing album to monitored in Lidarr.', {
             label: 'Lidarr',
-            albumId: response.data.id,
-            albumTitle: response.data.title,
+            albumId: existingAlbum.id,
+            albumTitle: existingAlbum.title,
           });
+        }
 
-          if (options.searchNow) {
-            await this.searchAlbum(response.data.id);
-          }
-
-          return response.data;
+        const artist = await this.getArtist({ id: existingAlbum.artistId });
+        if (!artist.monitored) {
+          await this.axios.put(`/artist/${artist.id}`, {
+            ...artist,
+            monitored: true,
+          });
         }
 
         if (options.searchNow) {
           await this.searchAlbum(existingAlbum.id);
         }
 
-        return existingAlbum;
+        return { ...existingAlbum, monitored: true };
       }
 
-      // Album doesn't exist, add it via the album endpoint
+      // Album isn't in the library. Add it via the album endpoint, the same way
+      // Lidarr's own UI does: Lidarr reuses the artist if it already exists,
+      // otherwise creates it with only this album monitored and without
+      // subscribing to the artist's future releases.
+      const lookup = await this.lookupAlbumByForeignId(options.foreignAlbumId);
+
       const response = await this.axios.post<LidarrAlbum>('/album', {
-        title: options.title,
+        ...(lookup ?? {}),
+        title: lookup?.title ?? options.title,
         foreignAlbumId: options.foreignAlbumId,
         monitored: options.monitored ?? true,
         anyReleaseOk: true,
         artist: {
+          ...(lookup?.artist ?? {}),
           foreignArtistId: options.artist.foreignArtistId,
-          artistName: options.artist.artistName,
+          artistName: lookup?.artist?.artistName ?? options.artist.artistName,
           qualityProfileId: options.qualityProfileId,
           metadataProfileId: options.metadataProfileId,
           rootFolderPath: options.rootFolderPath,
           monitored: true,
+          monitorNewItems: 'none',
           tags: options.tags,
+          addOptions: {
+            monitor: 'none',
+            searchForMissingAlbums: false,
+          },
         },
         addOptions: {
           searchForNewAlbum: options.searchNow ?? true,

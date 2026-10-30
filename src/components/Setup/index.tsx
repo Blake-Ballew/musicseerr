@@ -3,7 +3,6 @@ import JellyfinLogo from '@app/assets/services/jellyfin.svg';
 import PlexLogo from '@app/assets/services/plex.svg';
 import AppDataWarning from '@app/components/AppDataWarning';
 import Button from '@app/components/Common/Button';
-import ImageFader from '@app/components/Common/ImageFader';
 import PageTitle from '@app/components/Common/PageTitle';
 import LanguagePicker from '@app/components/Layout/LanguagePicker';
 import SettingsJellyfin from '@app/components/Settings/SettingsJellyfin';
@@ -73,8 +72,13 @@ const Setup = () => {
   };
 
   const validateLibraries = useCallback(async () => {
-    // Navidrome has no library concept — consider setup complete once logged in
-    if (mediaServerType === MediaServerType.NAVIDROME) {
+    // Music availability comes from Lidarr, so movie/TV library selection is
+    // optional — consider setup complete once a media server is signed in to
+    if (
+      mediaServerType === MediaServerType.NAVIDROME ||
+      mediaServerType === MediaServerType.JELLYFIN ||
+      mediaServerType === MediaServerType.EMBY
+    ) {
       setMediaServerSettingsComplete(true);
       return;
     }
@@ -106,9 +110,6 @@ const Setup = () => {
     }
   }, [intl, mediaServerType, toasts]);
 
-  // Backdrops endpoint pulls from TMDB which we don't use for MusicSeerr.
-  // Skip the network call so the setup page doesn't show broken art.
-  const backdrops: string[] | undefined = undefined;
 
   useEffect(() => {
     if (settings.currentSettings.initialized) {
@@ -151,13 +152,6 @@ const Setup = () => {
   return (
     <div className="relative flex min-h-screen flex-col justify-center bg-gray-900 py-12">
       <PageTitle title={intl.formatMessage(messages.setup)} />
-      <ImageFader
-        backgroundImages={
-          backdrops?.map(
-            (backdrop) => `https://image.tmdb.org/t/p/original${backdrop}`
-          ) ?? []
-        }
-      />
       <div className="absolute right-4 top-4 z-50">
         <LanguagePicker />
       </div>
@@ -293,7 +287,7 @@ const Setup = () => {
                   Navidrome is configured. No library sync needed.
                 </div>
               ) : (
-                <SettingsJellyfin isSetupSettings onComplete={handleComplete} />
+                <SettingsJellyfin isSetupSettings />
               )}
               <div className="actions">
                 <div className="flex justify-end">

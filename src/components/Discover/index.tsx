@@ -163,7 +163,6 @@ const Discover = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={intl.formatMessage(messages.searchPlaceholder)}
               className="w-full rounded-full border border-gray-700 bg-gray-800 py-3 pl-12 pr-4 text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              autoFocus
             />
           </div>
         </form>

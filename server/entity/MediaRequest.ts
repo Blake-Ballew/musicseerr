@@ -902,7 +902,9 @@ export class MediaRequest {
           event,
           subject: `${albumTitle} - ${artistName}`,
           message: `Music album request: ${albumTitle} by ${artistName}`,
-          image: undefined,
+          image: entity.musicBrainzId
+            ? `https://coverartarchive.org/release-group/${entity.musicBrainzId}/front-500`
+            : undefined,
         });
       } else if (entity.type === MediaType.TV) {
         const tv = await tmdb.getTvShow({ tvId: media.tmdbId });

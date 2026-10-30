@@ -582,8 +582,9 @@ class Settings {
         'sonarr-scan': {
           schedule: '0 30 4 * * *',
         },
+        // Lidarr is the only source of music availability, so poll it often
         'lidarr-scan': {
-          schedule: '0 0 5 * * *',
+          schedule: '0 */10 * * * *',
         },
         'availability-sync': {
           schedule: '0 0 5 * * *',
