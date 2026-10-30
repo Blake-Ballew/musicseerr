@@ -654,7 +654,7 @@ requestRoutes.post<{
     try {
       const request = await requestRepository.findOneOrFail({
         where: { id: Number(req.params.requestId) },
-        relations: { requestedBy: true, modifiedBy: true },
+        relations: { requestedBy: true, modifiedBy: true, media: true },
       });
 
       // this also triggers updating the parent media's status & sending to *arr

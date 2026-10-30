@@ -461,21 +461,21 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
 
   /**
    * Lidarr finishes adding a new artist in the background (metadata refresh,
-   * then post-add monitoring). Once that settles, make sure the requested
-   * album actually ended up monitored, and fix it up if not.
+   * then post-add monitoring and search). Its post-add search often runs
+   * before the requested album is monitored and searches nothing, so once
+   * that settles, make sure the album and artist are monitored and search.
    */
   private verifyMonitoredLater(foreignAlbumId: string, searchNow: boolean) {
     const attempt = async (remaining: number) => {
       const album = await this.getAlbumByForeignId(foreignAlbumId);
-      if (album?.monitored) {
-        return;
-      }
-      if (album && remaining <= 2) {
-        logger.warn('Requested album was left unmonitored, fixing', {
-          label: 'Lidarr',
-          albumId: album.id,
-          albumTitle: album.title,
-        });
+      if (album) {
+        if (!album.monitored) {
+          logger.warn('Requested album was left unmonitored, fixing', {
+            label: 'Lidarr',
+            albumId: album.id,
+            albumTitle: album.title,
+          });
+        }
         await this.monitorAndSearch(album, searchNow);
         return;
       }
@@ -483,7 +483,8 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
         setTimeout(() => attempt(remaining - 1).catch(() => undefined), 15000);
       }
     };
-    setTimeout(() => attempt(6).catch(() => undefined), 15000);
+    // Give the artist refresh and post-add step time to finish first
+    setTimeout(() => attempt(6).catch(() => undefined), 45000);
   }
 
   public async searchAlbum(albumId: number): Promise<void> {
