@@ -56,7 +56,9 @@ const messages = defineMessages('components.MusicUpload', {
   trackCountMatch: '{count} tracks, matches your upload',
   trackCountMismatch: 'This album has {counts} tracks; you uploaded {count}',
   noCandidates: 'No matching albums found. Try searching below.',
-  searchPlaceholder: 'Search for the album, e.g. "Alestorm Black Sails"',
+  searchPlaceholder: 'Search for the album, or paste its MusicBrainz link',
+  searchHint:
+    "Not in the list? Find the album on {musicbrainz}, copy the album page's address, and paste it into the search box.",
   search: 'Search',
   addToLibrary: 'Add to library',
   tryAgain: 'Try again',
@@ -735,6 +737,26 @@ const MusicUpload = () => {
                         <span>{intl.formatMessage(messages.search)}</span>
                       </Button>
                     </form>
+                  )}
+                  {canChoose && (
+                    <p className="mt-2 text-sm text-gray-400">
+                      {intl.formatMessage(messages.searchHint, {
+                        musicbrainz: (
+                          <a
+                            href={`https://musicbrainz.org/search?type=release_group&query=${encodeURIComponent(
+                              `${active.album?.artist ?? ''} ${
+                                active.album?.title ?? ''
+                              }`.trim()
+                            )}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-indigo-400 underline hover:text-indigo-300"
+                          >
+                            MusicBrainz
+                          </a>
+                        ),
+                      })}
+                    </p>
                   )}
 
                   <div className="mt-5 flex flex-wrap justify-end gap-2">
