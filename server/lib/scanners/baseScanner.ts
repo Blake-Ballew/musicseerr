@@ -619,10 +619,7 @@ class BaseScanner<T> {
           changedExisting = true;
         }
 
-        if (
-          serviceId !== undefined &&
-          existing.serviceId !== serviceId
-        ) {
+        if (serviceId !== undefined && existing.serviceId !== serviceId) {
           existing.serviceId = serviceId;
           changedExisting = true;
         }
@@ -652,6 +649,21 @@ class BaseScanner<T> {
         } else {
           this.log(`Title already exists and no changes detected for ${title}`);
         }
+      } else {
+        // Album is in Lidarr but was never requested here: record it so it
+        // shows as available (or downloading) instead of requestable
+        const newMedia = new Media({
+          tmdbId: 0, // Not used for music but column is not nullable
+          musicBrainzId,
+          mediaType: MediaType.MUSIC,
+          status: processing ? MediaStatus.PROCESSING : MediaStatus.AVAILABLE,
+          status4k: MediaStatus.UNKNOWN,
+          serviceId,
+          externalServiceId,
+          externalServiceSlug,
+        });
+        await mediaRepository.save(newMedia);
+        this.log(`Saved new media: ${title}`, 'info');
       }
     });
   }

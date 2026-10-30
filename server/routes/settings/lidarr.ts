@@ -1,4 +1,5 @@
 import LidarrAPI from '@server/api/servarr/lidarr';
+import { lidarrScanner } from '@server/lib/scanners/lidarr';
 import type { LidarrSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -12,6 +13,14 @@ lidarrRoutes.get('/', (_req, res) => {
   res.status(200).json(settings.lidarr);
 });
 
+// Pick up what's already in the library right away instead of waiting for
+// the next scheduled scan
+const scanSoon = (server: LidarrSettings) => {
+  if (server.syncEnabled && !lidarrScanner.status().running) {
+    lidarrScanner.run();
+  }
+};
+
 lidarrRoutes.post('/', async (req, res) => {
   const settings = getSettings();
 
@@ -21,9 +30,7 @@ lidarrRoutes.post('/', async (req, res) => {
 
   if (req.body.isDefault) {
     settings.lidarr
-      .filter(
-        (lidarrInstance) => lidarrInstance.is4k === req.body.is4k
-      )
+      .filter((lidarrInstance) => lidarrInstance.is4k === req.body.is4k)
       .forEach((lidarrInstance) => {
         lidarrInstance.isDefault = false;
       });
@@ -31,6 +38,7 @@ lidarrRoutes.post('/', async (req, res) => {
 
   settings.lidarr = [...settings.lidarr, newLidarr];
   await settings.save();
+  scanSoon(newLidarr);
 
   return res.status(201).json(newLidarr);
 });
@@ -90,9 +98,7 @@ lidarrRoutes.put<{ id: string }, LidarrSettings, LidarrSettings>(
 
     if (req.body.isDefault) {
       settings.lidarr
-        .filter(
-          (lidarrInstance) => lidarrInstance.is4k === req.body.is4k
-        )
+        .filter((lidarrInstance) => lidarrInstance.is4k === req.body.is4k)
         .forEach((lidarrInstance) => {
           lidarrInstance.isDefault = false;
         });
@@ -103,6 +109,7 @@ lidarrRoutes.put<{ id: string }, LidarrSettings, LidarrSettings>(
       id: Number(req.params.id),
     } as LidarrSettings;
     await settings.save();
+    scanSoon(settings.lidarr[lidarrIndex]);
 
     return res.status(200).json(settings.lidarr[lidarrIndex]);
   }
