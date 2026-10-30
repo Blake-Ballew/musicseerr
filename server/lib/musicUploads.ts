@@ -1,5 +1,8 @@
 import MusicBrainz from '@server/api/musicbrainz';
-import type { MusicAlbumResult } from '@server/api/musicbrainz/interfaces';
+import type {
+  MusicAlbumResult,
+  MusicArtistResult,
+} from '@server/api/musicbrainz/interfaces';
 import LidarrAPI from '@server/api/servarr/lidarr';
 import { lidarrScanner } from '@server/lib/scanners/lidarr';
 import { getSettings } from '@server/lib/settings';
@@ -294,6 +297,13 @@ export const findCandidates = async (
   const mb = createMusicBrainz();
   const candidates: UploadCandidate[] = [];
 
+  // A pasted MusicBrainz album link or ID.
+  // shortcut: only release-group IDs work, not /release/ edition links; add a release lookup if people paste those.
+  const pastedId = query.text?.match(
+    /[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i
+  )?.[0];
+  releaseGroupId ??= pastedId;
+
   if (releaseGroupId) {
     try {
       candidates.push(
@@ -305,7 +315,9 @@ export const findCandidates = async (
   }
 
   const searches: string[] = [];
-  if (query.text) {
+  if (pastedId) {
+    // Nothing to search for
+  } else if (query.text) {
     searches.push(query.text);
   } else if (query.title) {
     if (query.artist) {
@@ -339,6 +351,33 @@ export const findCandidates = async (
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
+
+  // Search indexes lag behind new releases, but the artist's discography doesn't
+  const { artist, title } = query;
+  if (
+    artist &&
+    title &&
+    ![...candidates, ...scored.map((s) => s.album)].some(
+      (a) => similarity(a.title, title) === 1
+    )
+  ) {
+    try {
+      const found = (
+        (await mb.searchArtists({ query: artist, limit: 5 }))
+          .results as MusicArtistResult[]
+      ).find((a) => similarity(a.name, artist) === 1);
+      if (found) {
+        const albums = (await mb.getArtistAlbums(found.id)).filter(
+          (a) =>
+            similarity(a.title, title) === 1 &&
+            !candidates.some((c) => c.id === a.id)
+        );
+        scored.unshift(...albums.map((album) => ({ album, score: 3 })));
+      }
+    } catch {
+      // Keep whatever search found
+    }
+  }
 
   // Search results don't include releases; fetch them to compare track counts
   for (const { album } of scored) {
@@ -544,7 +583,7 @@ export const analyzeUpload = async (id: string): Promise<MusicUpload> => {
     issues.push({
       level: 'warning',
       message:
-        "We couldn't find this album automatically. Search for it below.",
+        "We couldn't find this album automatically. Search for it below, or paste its MusicBrainz album link.",
     });
   }
   upload.status = 'ready';
