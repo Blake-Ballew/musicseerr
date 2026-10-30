@@ -593,8 +593,9 @@ export const analyzeUpload = async (id: string): Promise<MusicUpload> => {
 export const searchForUpload = async (id: string, text: string) => {
   const upload = await getUpload(id);
   if (!upload) throw new Error('Upload not found');
+  // The tagged artist/title still lets new albums be found via the discography
   const candidates = await findCandidates(
-    { text },
+    { text, artist: upload.album?.artist, title: upload.album?.title },
     upload.album?.trackCount ?? audioFiles(upload).length
   );
   upload.candidates = candidates;
