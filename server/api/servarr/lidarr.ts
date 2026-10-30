@@ -488,17 +488,71 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
   }
 
   /**
-   * Import a folder of tagged files the way a finished download is imported,
-   * and wait for Lidarr to finish. Files Lidarr can't match stay in place.
+   * Lidarr's Manual Import view of a folder: what each file matched (by its
+   * tags) and why any file can't be imported
    */
-  public async importFolder(path: string, timeoutMs = 10 * 60 * 1000) {
+  private async manualImportItems(folder: string) {
+    const { data } = await this.axios.get<
+      {
+        path: string;
+        artist?: { id: number };
+        album?: { id: number; title: string; foreignAlbumId: string };
+        albumReleaseId?: number;
+        tracks?: { id: number }[];
+        quality: unknown;
+        releaseGroup?: string;
+        indexerFlags?: number;
+        rejections?: { reason: string }[];
+      }[]
+    >('/manualimport', {
+      params: { folder, filterExistingFiles: false },
+      timeout: 120000,
+    });
+    return data;
+  }
+
+  /**
+   * Import the files in a folder that Lidarr matches to the given album, and
+   * wait for Lidarr to finish. Other files stay in place. (Lidarr's "scan
+   * folder" import guesses the artist from the folder name, so it can't be
+   * used on upload folders.)
+   */
+  public async importFolder(
+    path: string,
+    foreignAlbumId: string,
+    timeoutMs = 10 * 60 * 1000
+  ) {
+    const files = (await this.manualImportItems(path))
+      .filter(
+        (item) =>
+          !item.rejections?.length &&
+          item.artist &&
+          item.album?.foreignAlbumId === foreignAlbumId &&
+          item.tracks?.length
+      )
+      .map((item) => ({
+        path: item.path,
+        artistId: item.artist?.id,
+        albumId: item.album?.id,
+        albumReleaseId: item.albumReleaseId,
+        trackIds: item.tracks?.map((t) => t.id),
+        quality: item.quality,
+        releaseGroup: item.releaseGroup,
+        indexerFlags: item.indexerFlags ?? 0,
+        disableReleaseSwitching: false,
+      }));
+    if (!files.length) {
+      return { status: 'failed', message: 'No files matched the album' };
+    }
+
     const { data: command } = await this.axios.post<{
       id: number;
       status: string;
     }>('/command', {
-      name: 'DownloadedAlbumsScan',
-      path,
-      importMode: 'Move',
+      name: 'ManualImport',
+      files,
+      importMode: 'move',
+      replaceExistingFiles: false,
     });
 
     const deadline = Date.now() + timeoutMs;
@@ -508,29 +562,31 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
         status: string;
         message?: string;
       }>(`/command/${command.id}`);
-      if (['completed', 'failed', 'aborted', 'cancelled'].includes(data.status)) {
+      if (
+        ['completed', 'failed', 'aborted', 'cancelled'].includes(data.status)
+      ) {
         return data;
       }
     }
     throw new Error('Lidarr import timed out');
   }
 
-  /** Why Lidarr won't import the files in a folder (Manual Import's view) */
+  /** Why Lidarr won't import the files in a folder into the given album */
   public async getImportRejections(
-    folder: string
+    folder: string,
+    foreignAlbumId: string
   ): Promise<{ path: string; reasons: string[] }[]> {
-    const { data } = await this.axios.get<
-      {
-        path: string;
-        rejections?: { reason: string }[];
-      }[]
-    >('/manualimport', {
-      params: { folder, filterExistingFiles: false },
-      timeout: 120000,
-    });
-    return data.map((item) => ({
+    return (await this.manualImportItems(folder)).map((item) => ({
       path: item.path,
-      reasons: (item.rejections ?? []).map((r) => r.reason),
+      reasons: item.rejections?.length
+        ? item.rejections.map((r) => r.reason)
+        : item.album && item.album.foreignAlbumId !== foreignAlbumId
+          ? [
+              `Lidarr matched this file to a different album: ${item.album.title}`,
+            ]
+          : !item.album || !item.tracks?.length
+            ? ['Lidarr could not match this file to a track']
+            : [],
     }));
   }
 

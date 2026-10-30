@@ -671,7 +671,7 @@ const runImport = async (upload: MusicUpload, candidate: UploadCandidate) => {
   const before = (await lidarr.getAlbumByForeignId(candidate.id))?.statistics
     ?.trackFileCount;
   const lidarrPath = path.posix.join(lidarrUploadDir(), upload.id);
-  const command = await lidarr.importFolder(lidarrPath);
+  const command = await lidarr.importFolder(lidarrPath, candidate.id);
 
   const after = await lidarr.getAlbumByForeignId(candidate.id);
   const imported = (after?.statistics?.trackFileCount ?? 0) - (before ?? 0);
@@ -695,7 +695,7 @@ const runImport = async (upload: MusicUpload, candidate: UploadCandidate) => {
 
   let rejections: { path: string; reasons: string[] }[] = [];
   try {
-    rejections = await lidarr.getImportRejections(lidarrPath);
+    rejections = await lidarr.getImportRejections(lidarrPath, candidate.id);
   } catch {
     // Not fatal; the files are still there for manual import
   }
