@@ -23,6 +23,7 @@ import type { RequestResultsResponse } from '@server/interfaces/api/requestInter
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useState } from 'react';
 import { useInView } from 'react-intersection-observer';
@@ -46,6 +47,8 @@ const messages = defineMessages('components.RequestList.RequestItem', {
   unknowntitle: 'Unknown Title',
   removearr: 'Remove from {arr}',
   profileName: 'Profile',
+  unknownAlbum: 'Unknown Album',
+  unknownArtist: 'Unknown Artist',
 });
 
 const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
@@ -303,8 +306,12 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
   const intl = useIntl();
   const { user, hasPermission } = useUser();
   const [showEditModal, setShowEditModal] = useState(false);
-  const url =
-    request.type === 'movie'
+  // Music requests carry their own display data (album/artist names and a
+  // MusicBrainz ID), so there is no TMDB lookup to do
+  const isMusic = request.type === 'music';
+  const url = isMusic
+    ? null
+    : request.type === 'movie'
       ? `/api/v1/movie/${request.media.tmdbId}`
       : `/api/v1/tv/${request.media.tmdbId}`;
   const { data: title, error } = useSWR<MovieDetails | TvDetails>(
@@ -374,7 +381,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
     iOSPlexUrl4k: requestData?.media?.iOSPlexUrl4k,
   });
 
-  if (!title && !error) {
+  if (!isMusic && !title && !error) {
     return (
       <div
         className="h-64 w-full animate-pulse rounded-xl bg-gray-800 xl:h-28"
@@ -383,7 +390,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
     );
   }
 
-  if (!title || !requestData) {
+  if ((!isMusic && !title) || !requestData) {
     return (
       <RequestItemError
         requestData={requestData}
@@ -391,6 +398,43 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
       />
     );
   }
+
+  const musicBrainzId =
+    requestData.musicBrainzId ?? requestData.media.musicBrainzId;
+  const display =
+    isMusic || !title
+      ? {
+          name:
+            requestData.albumTitle ?? intl.formatMessage(messages.unknownAlbum),
+          subtitle:
+            requestData.artistName ??
+            intl.formatMessage(messages.unknownArtist),
+          year: undefined,
+          href: `/music/album/${musicBrainzId}`,
+          poster: musicBrainzId
+            ? `https://coverartarchive.org/release-group/${musicBrainzId}/front-250`
+            : undefined,
+          backdrop: undefined,
+        }
+      : {
+          name: isMovie(title) ? title.title : title.name,
+          subtitle: undefined,
+          year: (isMovie(title)
+            ? title.releaseDate
+            : title.firstAirDate
+          )?.slice(0, 4),
+          href:
+            requestData.type === 'movie'
+              ? `/movie/${requestData.media.tmdbId}`
+              : `/tv/${requestData.media.tmdbId}`,
+          poster: title.posterPath
+            ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${title.posterPath}`
+            : '/images/seerr_poster_not_found.png',
+          backdrop: title.backdropPath,
+        };
+  const manageHref = isMusic
+    ? display.href
+    : `/${requestData.type}/${requestData.media.tmdbId}?manage=1`;
 
   return (
     <>
@@ -407,11 +451,11 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
         }}
       />
       <div className="relative flex w-full flex-col justify-between overflow-hidden rounded-xl bg-gray-800 py-2 text-gray-400 shadow-md ring-1 ring-gray-700 xl:h-28 xl:flex-row">
-        {title.backdropPath && (
+        {display.backdrop && (
           <div className="absolute inset-0 z-0 w-full bg-cover bg-center xl:w-2/3">
             <CachedImage
               type="tmdb"
-              src={`https://image.tmdb.org/t/p/w1920_and_h800_multi_faces/${title.backdropPath}`}
+              src={`https://image.tmdb.org/t/p/w1920_and_h800_multi_faces/${display.backdrop}`}
               alt=""
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               fill
@@ -428,45 +472,53 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
         <div className="relative flex w-full flex-col justify-between overflow-hidden sm:flex-row">
           <div className="relative z-10 flex w-full items-center overflow-hidden pl-4 pr-4 sm:pr-0 xl:w-7/12 2xl:w-2/3">
             <Link
-              href={
-                requestData.type === 'movie'
-                  ? `/movie/${requestData.media.tmdbId}`
-                  : `/tv/${requestData.media.tmdbId}`
-              }
-              className="relative h-auto w-12 flex-shrink-0 scale-100 transform-gpu overflow-hidden rounded-md transition duration-300 hover:scale-105"
+              href={display.href}
+              className={`relative h-auto flex-shrink-0 scale-100 transform-gpu overflow-hidden rounded-md transition duration-300 hover:scale-105 ${
+                isMusic ? 'w-16' : 'w-12'
+              }`}
             >
-              <CachedImage
-                type="tmdb"
-                src={
-                  title.posterPath
-                    ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${title.posterPath}`
-                    : '/images/seerr_poster_not_found.png'
-                }
-                alt=""
-                sizes="100vw"
-                style={{ width: '100%', height: 'auto', objectFit: 'cover' }}
-                width={600}
-                height={900}
-              />
+              {isMusic ? (
+                <div className="relative aspect-square w-full bg-gray-700">
+                  {display.poster && (
+                    <Image
+                      src={display.poster}
+                      alt=""
+                      fill
+                      unoptimized
+                      className="object-cover"
+                    />
+                  )}
+                </div>
+              ) : (
+                <CachedImage
+                  type="tmdb"
+                  src={display.poster ?? '/images/seerr_poster_not_found.png'}
+                  alt=""
+                  sizes="100vw"
+                  style={{ width: '100%', height: 'auto', objectFit: 'cover' }}
+                  width={600}
+                  height={900}
+                />
+              )}
             </Link>
             <div className="flex flex-col justify-center overflow-hidden pl-2 xl:pl-4">
-              <div className="pt-0.5 text-xs font-medium text-white sm:pt-1">
-                {(isMovie(title)
-                  ? title.releaseDate
-                  : title.firstAirDate
-                )?.slice(0, 4)}
-              </div>
+              {display.year && (
+                <div className="pt-0.5 text-xs font-medium text-white sm:pt-1">
+                  {display.year}
+                </div>
+              )}
               <Link
-                href={
-                  requestData.type === 'movie'
-                    ? `/movie/${requestData.media.tmdbId}`
-                    : `/tv/${requestData.media.tmdbId}`
-                }
+                href={display.href}
                 className="mr-2 min-w-0 truncate text-lg font-bold text-white hover:underline xl:text-xl"
               >
-                {isMovie(title) ? title.title : title.name}
+                {display.name}
               </Link>
-              {!isMovie(title) && request.seasons.length > 0 && (
+              {display.subtitle && (
+                <div className="truncate text-sm text-gray-300">
+                  {display.subtitle}
+                </div>
+              )}
+              {title && !isMovie(title) && request.seasons.length > 0 && (
                 <div className="card-field">
                   <span className="card-field-name">
                     {intl.formatMessage(messages.seasons, {
@@ -498,19 +550,13 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                   {intl.formatMessage(globalMessages.declined)}
                 </Badge>
               ) : requestData.status === MediaRequestStatus.FAILED ? (
-                <Badge
-                  badgeType="danger"
-                  href={`/${requestData.type}/${requestData.media.tmdbId}?manage=1`}
-                >
+                <Badge badgeType="danger" href={manageHref}>
                   {intl.formatMessage(globalMessages.failed)}
                 </Badge>
               ) : requestData.status === MediaRequestStatus.PENDING &&
                 requestData.media[requestData.is4k ? 'status4k' : 'status'] ===
                   MediaStatus.DELETED ? (
-                <Badge
-                  badgeType="warning"
-                  href={`/${requestData.type}/${requestData.media.tmdbId}?manage=1`}
-                >
+                <Badge badgeType="warning" href={manageHref}>
                   {intl.formatMessage(globalMessages.pending)}
                 </Badge>
               ) : (
@@ -523,7 +569,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                       requestData.is4k ? 'downloadStatus4k' : 'downloadStatus'
                     ]
                   }
-                  title={isMovie(title) ? title.title : title.name}
+                  title={display.name}
                   inProgress={
                     (
                       requestData.media[
@@ -532,7 +578,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                     ).length > 0
                   }
                   is4k={requestData.is4k}
-                  tmdbId={requestData.media.tmdbId}
+                  tmdbId={isMusic ? undefined : requestData.media.tmdbId}
                   mediaType={requestData.type}
                   plexUrl={requestData.is4k ? plexUrl4k : plexUrl}
                   serviceUrl={
@@ -701,7 +747,12 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                     <TrashIcon />
                     <span>
                       {intl.formatMessage(messages.removearr, {
-                        arr: request.type === 'movie' ? 'Radarr' : 'Sonarr',
+                        arr:
+                          request.type === 'movie'
+                            ? 'Radarr'
+                            : request.type === 'music'
+                              ? 'Lidarr'
+                              : 'Sonarr',
                       })}
                     </span>
                   </ConfirmButton>
@@ -734,6 +785,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
               </div>
             )}
           {requestData.status === MediaRequestStatus.PENDING &&
+            !isMusic &&
             (hasPermission(Permission.MANAGE_REQUESTS) ||
               (requestData.requestedBy.id === user?.id &&
                 (requestData.type === 'tv' ||
