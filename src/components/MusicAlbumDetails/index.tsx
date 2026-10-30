@@ -7,12 +7,13 @@ import StatusBadge from '@app/components/StatusBadge';
 import { Permission, useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
+import { Transition } from '@headlessui/react';
 import { MusicalNoteIcon } from '@heroicons/react/24/outline';
 import { MediaStatus } from '@server/constants/media';
 import type { DownloadingItem } from '@server/lib/downloadtracker';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
@@ -100,9 +101,7 @@ const MusicAlbumDetails = () => {
     error,
     mutate: revalidate,
   } = useSWR<AlbumData>(
-    router.query.albumId
-      ? `/api/v1/music/album/${router.query.albumId}`
-      : null
+    router.query.albumId ? `/api/v1/music/album/${router.query.albumId}` : null
   );
 
   const onRequestComplete = useCallback(() => {
@@ -169,7 +168,16 @@ const MusicAlbumDetails = () => {
         </div>
       )}
       <PageTitle title={`${data.title} - ${data.artistName}`} />
-      {showRequestModal && (
+      <Transition
+        as="div"
+        enter="transition-opacity duration-300"
+        enterFrom="opacity-0"
+        enterTo="opacity-100"
+        leave="transition-opacity duration-300"
+        leaveFrom="opacity-100"
+        leaveTo="opacity-0"
+        show={showRequestModal}
+      >
         <MusicAlbumRequestModal
           musicBrainzId={data.id}
           albumTitle={data.title}
@@ -179,7 +187,7 @@ const MusicAlbumDetails = () => {
           onComplete={onRequestComplete}
           onCancel={() => setShowRequestModal(false)}
         />
-      )}
+      </Transition>
       <div className="media-header">
         <div className="media-poster">
           {data.posterUrl ? (
@@ -204,9 +212,7 @@ const MusicAlbumDetails = () => {
                   status={data.mediaInfo.status}
                   downloadItem={data.mediaInfo.downloadStatus}
                   title={data.title}
-                  inProgress={
-                    (data.mediaInfo.downloadStatus ?? []).length > 0
-                  }
+                  inProgress={(data.mediaInfo.downloadStatus ?? []).length > 0}
                   tmdbId={0}
                   mediaType="music"
                   serviceUrl={data.mediaInfo.serviceUrl}
@@ -322,8 +328,7 @@ const MusicAlbumDetails = () => {
           {data.releases && data.releases.length > 1 && (
             <div className="mt-6">
               <h2 className="text-xl font-bold text-white">
-                {intl.formatMessage(messages.releases)} (
-                {data.releases.length})
+                {intl.formatMessage(messages.releases)} ({data.releases.length})
               </h2>
               <div className="mt-3 space-y-2">
                 {data.releases.slice(0, 10).map((release) => (
@@ -337,9 +342,7 @@ const MusicAlbumDetails = () => {
                     <div className="flex items-center gap-3 text-sm text-gray-400">
                       {release.format && <span>{release.format}</span>}
                       {release.country && <span>{release.country}</span>}
-                      {release.date && (
-                        <span>{release.date.slice(0, 4)}</span>
-                      )}
+                      {release.date && <span>{release.date.slice(0, 4)}</span>}
                       {release.trackCount > 0 && (
                         <span>{release.trackCount} tracks</span>
                       )}
@@ -392,9 +395,7 @@ const MusicAlbumDetails = () => {
           {data.firstReleaseDate && (
             <div className="media-fact">
               <span>First Release</span>
-              <span className="media-fact-value">
-                {data.firstReleaseDate}
-              </span>
+              <span className="media-fact-value">{data.firstReleaseDate}</span>
             </div>
           )}
           {data.disambiguation && (

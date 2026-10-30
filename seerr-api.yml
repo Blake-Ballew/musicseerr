@@ -6307,7 +6307,7 @@ paths:
           name: mediaType
           schema:
             type: string
-            enum: [movie, tv, all]
+            enum: [movie, tv, music, all]
             nullable: true
             default: all
       responses:
@@ -6341,11 +6341,23 @@ paths:
               properties:
                 mediaType:
                   type: string
-                  enum: [movie, tv]
+                  enum: [movie, tv, music]
                   example: movie
                 mediaId:
                   type: number
                   example: 123
+                musicBrainzId:
+                  type: string
+                  description: MusicBrainz release group ID (music requests)
+                artistMusicBrainzId:
+                  type: string
+                  description: MusicBrainz artist ID (music requests)
+                artistName:
+                  type: string
+                albumTitle:
+                  type: string
+                metadataProfileId:
+                  type: number
                 tvdbId:
                   type: number
                   example: 123
@@ -6457,7 +6469,7 @@ paths:
               properties:
                 mediaType:
                   type: string
-                  enum: [movie, tv]
+                  enum: [movie, tv, music]
                 seasons:
                   type: array
                   items:

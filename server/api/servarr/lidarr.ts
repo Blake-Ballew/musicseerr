@@ -360,32 +360,8 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
           return existingAlbum;
         }
 
-        // Album is in the library but missing files: make sure it (and its
-        // artist) are monitored, then search
-        if (!existingAlbum.monitored) {
-          await this.axios.put('/album/monitor', {
-            albumIds: [existingAlbum.id],
-            monitored: true,
-          });
-
-          logger.info('Set existing album to monitored in Lidarr.', {
-            label: 'Lidarr',
-            albumId: existingAlbum.id,
-            albumTitle: existingAlbum.title,
-          });
-        }
-
-        const artist = await this.getArtist({ id: existingAlbum.artistId });
-        if (!artist.monitored) {
-          await this.axios.put(`/artist/${artist.id}`, {
-            ...artist,
-            monitored: true,
-          });
-        }
-
-        if (options.searchNow) {
-          await this.searchAlbum(existingAlbum.id);
-        }
+        // Album is in the library but missing files
+        await this.monitorAndSearch(existingAlbum, options.searchNow ?? true);
 
         return { ...existingAlbum, monitored: true };
       }
@@ -412,9 +388,13 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
           monitored: true,
           monitorNewItems: 'none',
           tags: options.tags,
+          // Monitor only the requested album. (With monitor 'none' alone,
+          // Lidarr's post-add step unmonitors every album, this one included.)
           addOptions: {
             monitor: 'none',
-            searchForMissingAlbums: false,
+            monitored: true,
+            albumsToMonitor: [options.foreignAlbumId],
+            searchForMissingAlbums: options.searchNow ?? true,
           },
         },
         addOptions: {
@@ -432,6 +412,11 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
         throw new Error('Failed to add album to Lidarr');
       }
 
+      this.verifyMonitoredLater(
+        options.foreignAlbumId,
+        options.searchNow ?? true
+      );
+
       return response.data;
     } catch (e) {
       logger.error('Failed to add album to Lidarr.', {
@@ -443,6 +428,63 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
       throw new Error('Failed to add album to Lidarr', { cause: e });
     }
   };
+
+  private async monitorAndSearch(
+    album: LidarrAlbum,
+    searchNow: boolean
+  ): Promise<void> {
+    if (!album.monitored) {
+      await this.axios.put('/album/monitor', {
+        albumIds: [album.id],
+        monitored: true,
+      });
+
+      logger.info('Set album to monitored in Lidarr.', {
+        label: 'Lidarr',
+        albumId: album.id,
+        albumTitle: album.title,
+      });
+    }
+
+    const artist = await this.getArtist({ id: album.artistId });
+    if (!artist.monitored) {
+      await this.axios.put(`/artist/${artist.id}`, {
+        ...artist,
+        monitored: true,
+      });
+    }
+
+    if (searchNow) {
+      await this.searchAlbum(album.id);
+    }
+  }
+
+  /**
+   * Lidarr finishes adding a new artist in the background (metadata refresh,
+   * then post-add monitoring). Once that settles, make sure the requested
+   * album actually ended up monitored, and fix it up if not.
+   */
+  private verifyMonitoredLater(foreignAlbumId: string, searchNow: boolean) {
+    const attempt = async (remaining: number) => {
+      const album = await this.getAlbumByForeignId(foreignAlbumId);
+      if (album?.monitored) {
+        return;
+      }
+      if (album && remaining <= 2) {
+        logger.warn('Requested album was left unmonitored, fixing', {
+          label: 'Lidarr',
+          albumId: album.id,
+          albumTitle: album.title,
+        });
+        await this.monitorAndSearch(album, searchNow);
+        return;
+      }
+      if (remaining > 0) {
+        setTimeout(() => attempt(remaining - 1).catch(() => undefined), 15000);
+      }
+    };
+    setTimeout(() => attempt(6).catch(() => undefined), 15000);
+  }
 
   public async searchAlbum(albumId: number): Promise<void> {
     logger.info('Executing album search command', {
