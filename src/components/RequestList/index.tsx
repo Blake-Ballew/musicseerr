@@ -15,7 +15,6 @@ import {
   Bars3BottomLeftIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  CircleStackIcon,
   FunnelIcon,
 } from '@heroicons/react/24/solid';
 import type { RequestResultsResponse } from '@server/interfaces/api/requestInterfaces';
@@ -51,7 +50,6 @@ type Sort = 'added' | 'modified';
 
 type SortDirection = 'asc' | 'desc';
 
-type MediaType = 'all' | 'movie' | 'tv';
 
 const RequestList = () => {
   const router = useRouter();
@@ -166,36 +164,6 @@ const RequestList = () => {
           {intl.formatMessage(messages.requests)}
         </Header>
         <div className="mt-2 flex flex-grow flex-col sm:flex-row lg:flex-grow-0">
-          <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 lg:flex-grow-0">
-            <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-sm text-gray-100">
-              <CircleStackIcon className="h-6 w-6" />
-            </span>
-            <select
-              id="mediaType"
-              name="mediaType"
-              onChange={(e) => {
-                setCurrentMediaType(e.target.value as MediaType);
-                router.push({
-                  pathname: router.pathname,
-                  query: router.query.userId
-                    ? { userId: router.query.userId }
-                    : {},
-                });
-              }}
-              value={currentMediaType}
-              className="rounded-r-only"
-            >
-              <option value="all">
-                {intl.formatMessage(globalMessages.all)}
-              </option>
-              <option value="movie">
-                {intl.formatMessage(globalMessages.movies)}
-              </option>
-              <option value="tv">
-                {intl.formatMessage(globalMessages.tvshows)}
-              </option>
-            </select>
-          </div>
           <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 lg:flex-grow-0">
             <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-sm text-gray-100">
               <FunnelIcon className="h-6 w-6" />
