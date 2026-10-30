@@ -1,5 +1,4 @@
 import ExternalAPI from '@server/api/externalapi';
-import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import logger from '@server/logger';
 import type {
@@ -20,11 +19,41 @@ const COVERART_API_URL = 'https://coverartarchive.org';
 const FANART_API_URL = 'https://webservice.fanart.tv/v3/music';
 const LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/';
 
-// MusicBrainz rate limit: 1 request per second
+// MusicBrainz rate limit: 1 request per second. The limit is per client IP,
+// so requests are queued process-wide rather than per MusicBrainz instance.
 const REQUEST_INTERVAL_MS = 1100;
+let lastRequestTime = 0;
+let requestQueue: Promise<void> = Promise.resolve();
+
+const waitForTurn = (): Promise<void> => {
+  const turn = requestQueue.then(async () => {
+    const wait = lastRequestTime + REQUEST_INTERVAL_MS - Date.now();
+    if (wait > 0) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    lastRequestTime = Date.now();
+  });
+  requestQueue = turn.catch(() => undefined);
+  return turn;
+};
+
+// Responses rarely change, so cache them (6h, the musicbrainz cache default)
+const responseCache = () => cacheManager.getCache('musicbrainz').data;
+
+const cached = async <T>(
+  key: string,
+  fetcher: () => Promise<T>
+): Promise<T> => {
+  const hit = responseCache().get<T>(key);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const value = await fetcher();
+  responseCache().set(key, value);
+  return value;
+};
 
 class MusicBrainz extends ExternalAPI {
-  private lastRequestTime = 0;
   private fanartApiKey: string | null = null;
   private lastfmApiKey: string | null = null;
 
@@ -33,9 +62,7 @@ class MusicBrainz extends ExternalAPI {
       MUSICBRAINZ_API_URL,
       {},
       {
-        nodeCache: cacheManager.getCache(
-          'musicbrainz' as AvailableCacheIds
-        ).data,
+        nodeCache: cacheManager.getCache('musicbrainz').data,
         headers: {
           Accept: 'application/json',
           'User-Agent': 'MusicSeerr/1.0.0 (https://github.com/musicseerr)',
@@ -51,25 +78,16 @@ class MusicBrainz extends ExternalAPI {
     path: string,
     params?: Record<string, string | number | undefined>
   ): Promise<T> {
-    const now = Date.now();
-    const timeSinceLastRequest = now - this.lastRequestTime;
-
-    if (timeSinceLastRequest < REQUEST_INTERVAL_MS) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, REQUEST_INTERVAL_MS - timeSinceLastRequest)
-      );
-    }
-
-    this.lastRequestTime = Date.now();
-
-    const response = await this.axios.get<T>(path, {
-      params: {
-        fmt: 'json',
-        ...params,
-      },
+    return cached(`mb:${path}:${JSON.stringify(params ?? {})}`, async () => {
+      await waitForTurn();
+      const response = await this.axios.get<T>(path, {
+        params: {
+          fmt: 'json',
+          ...params,
+        },
+      });
+      return response.data;
     });
-
-    return response.data;
   }
 
   public async searchArtists({
@@ -167,17 +185,11 @@ class MusicBrainz extends ExternalAPI {
 
       // Interleave results: albums first (more likely what people want),
       // then artists
-      const combined = [
-        ...albumResults.results,
-        ...artistResults.results,
-      ];
+      const combined = [...albumResults.results, ...artistResults.results];
 
       return {
         page: Math.floor(offset / limit) + 1,
-        totalPages: Math.max(
-          artistResults.totalPages,
-          albumResults.totalPages
-        ),
+        totalPages: Math.max(artistResults.totalPages, albumResults.totalPages),
         totalResults: artistResults.totalResults + albumResults.totalResults,
         results: combined.slice(0, limit),
       };
@@ -267,21 +279,25 @@ class MusicBrainz extends ExternalAPI {
     }
   }
 
-  public async getCoverArt(
-    releaseGroupId: string
-  ): Promise<string | null> {
+  public async getCoverArt(releaseGroupId: string): Promise<string | null> {
     try {
-      const response = await this.axios.get<CoverArtArchiveResponse>(
-        `${COVERART_API_URL}/release-group/${releaseGroupId}`,
-        {
-          headers: { Accept: 'application/json' },
-          timeout: 5000,
-        }
+      const response = await cached(`caa:${releaseGroupId}`, () =>
+        this.axios
+          .get<CoverArtArchiveResponse>(
+            `${COVERART_API_URL}/release-group/${releaseGroupId}`,
+            {
+              headers: { Accept: 'application/json' },
+              timeout: 5000,
+            }
+          )
+          .then((r) => ({ data: r.data }))
       );
 
       const front = response.data.images?.find((img) => img.front);
       if (front) {
-        return front.thumbnails?.['500'] ?? front.thumbnails?.large ?? front.image;
+        return (
+          front.thumbnails?.['500'] ?? front.thumbnails?.large ?? front.image
+        );
       }
 
       if (response.data.images?.[0]) {
@@ -306,14 +322,19 @@ class MusicBrainz extends ExternalAPI {
     }
 
     try {
-      const response = await this.axios.get<{
-        artistthumb?: { url: string }[];
-        artistbackground?: { url: string }[];
-        hdmusiclogo?: { url: string }[];
-      }>(`${FANART_API_URL}/${artistMbId}`, {
-        params: { api_key: this.fanartApiKey },
-        timeout: 5000,
-      });
+      const apiKey = this.fanartApiKey;
+      const response = await cached(`fanart:${artistMbId}`, () =>
+        this.axios
+          .get<{
+            artistthumb?: { url: string }[];
+            artistbackground?: { url: string }[];
+            hdmusiclogo?: { url: string }[];
+          }>(`${FANART_API_URL}/${artistMbId}`, {
+            params: { api_key: apiKey },
+            timeout: 5000,
+          })
+          .then((r) => ({ data: r.data }))
+      );
 
       return {
         poster: response.data.artistthumb?.[0]?.url ?? null,
@@ -330,19 +351,24 @@ class MusicBrainz extends ExternalAPI {
     }
 
     try {
-      const response = await this.axios.get<{
-        artist?: {
-          bio?: { content?: string; summary?: string };
-        };
-      }>(LASTFM_API_URL, {
-        params: {
-          method: 'artist.getinfo',
-          mbid: artistMbId,
-          api_key: this.lastfmApiKey,
-          format: 'json',
-        },
-        timeout: 5000,
-      });
+      const apiKey = this.lastfmApiKey;
+      const response = await cached(`lastfm-bio:${artistMbId}`, () =>
+        this.axios
+          .get<{
+            artist?: {
+              bio?: { content?: string; summary?: string };
+            };
+          }>(LASTFM_API_URL, {
+            params: {
+              method: 'artist.getinfo',
+              mbid: artistMbId,
+              api_key: apiKey,
+              format: 'json',
+            },
+            timeout: 5000,
+          })
+          .then((r) => ({ data: r.data }))
+      );
 
       const raw =
         response.data.artist?.bio?.content ??
@@ -363,7 +389,9 @@ class MusicBrainz extends ExternalAPI {
     }
   }
 
-  public async getRelease(releaseId: string): Promise<MusicReleaseDetail | null> {
+  public async getRelease(
+    releaseId: string
+  ): Promise<MusicReleaseDetail | null> {
     try {
       const data = await this.rateLimitedRequest<MusicBrainzRelease>(
         `/release/${releaseId}`,
@@ -446,12 +474,13 @@ class MusicBrainz extends ExternalAPI {
     };
   }
 
-  private normaliseReleaseGroup(
-    rg: MusicBrainzReleaseGroup
-  ): MusicAlbumResult {
+  private normaliseReleaseGroup(rg: MusicBrainzReleaseGroup): MusicAlbumResult {
     const artistCredit = rg['artist-credit'] ?? rg.artistCredit ?? [];
     const artistName = artistCredit
-      .map((ac: MusicBrainzArtistCredit) => `${ac.artist.name}${ac.joinphrase ?? ''}`)
+      .map(
+        (ac: MusicBrainzArtistCredit) =>
+          `${ac.artist.name}${ac.joinphrase ?? ''}`
+      )
       .join('');
     const artistId = artistCredit[0]?.artist?.id ?? '';
 
@@ -470,7 +499,11 @@ class MusicBrainz extends ExternalAPI {
       status: r.status ?? '',
       date: r.date ?? '',
       country: r.country ?? '',
-      trackCount: r.media?.reduce((sum, m) => sum + (m['track-count'] ?? m.trackCount ?? 0), 0) ?? 0,
+      trackCount:
+        r.media?.reduce(
+          (sum, m) => sum + (m['track-count'] ?? m.trackCount ?? 0),
+          0
+        ) ?? 0,
       format: r.media?.[0]?.format ?? '',
     }));
 
