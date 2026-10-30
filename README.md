@@ -1,44 +1,82 @@
-MusicSeerr (Alpha)
-A music request and discovery fork of Overseerr, specifically tailored for Lidarr and MusicBrainz.
+# MusicSeerr
 
-Project Intent
-Overseerr/Jellyseerr is built for movies and television. MusicSeerr adapts that framework to handle the specific metadata requirements of music—focusing on artists, albums, and discographies rather than titles and seasons. It is a request manager, not a media player.
+A music request manager for Lidarr, built on [Seerr](https://github.com/seerr-team/seerr) (the Overseerr/Jellyseerr codebase). Users search MusicBrainz, request albums, and MusicSeerr sends them to Lidarr and tells the requester when the album is in the library.
 
-Current Status: Alpha
-Functional
-MusicBrainz Search: Native search bar and browse pages for artists and albums.
+## Features
 
-Discography Views: Artist detail pages showing full release history.
+- Search artists and albums from MusicBrainz, with artist pages, discographies and track lists
+- Album requests go to Lidarr with only that album monitored, so one request doesn't subscribe you to the artist's whole future catalog
+- Seerr's users, permissions, approvals and notifications (Discord, email, ntfy, webhooks and more)
+- Requests are marked available once Lidarr has imported the album (checked every 10 minutes)
+- Sign in with Jellyfin, Emby, Plex or Navidrome accounts, or through a forward-auth proxy such as Authentik
 
-Lidarr Integration: Connectivity testing and server configuration storage.
+## Run with Docker
 
-Theming: Custom green interface and music-specific sidebar navigation.
+Every push to `main` publishes `ghcr.io/<owner>/musicseerr` through GitHub Actions (`.github/workflows/docker-publish.yml`).
 
-Immediate Requirements (Fixes Needed)
-Request Payload: Debugging the API modal to ensure the MusicBrainz ID is passed correctly to Lidarr.
+```yaml
+services:
+  musicseerr:
+    image: ghcr.io/OWNER/musicseerr:latest
+    container_name: musicseerr
+    restart: unless-stopped
+    ports:
+      - '5757:5757'
+    environment:
+      PORT: '5757'
+      TZ: America/New_York
+    volumes:
+      - ./config/musicseerr:/app/config
+```
 
-Metadata Logic: Implementing filters to separate studio albums from bootlegs, singles, and live recordings.
+Then open `http://<host>:5757` and follow setup:
 
-UI Labels: Replacing hardcoded "Series/Season" strings with "Artist/Album" context.
+1. Choose your media server and sign in as its admin. It's used for accounts only; music availability comes from Lidarr, so there are no libraries to pick.
+2. Add Lidarr: host, port, API key, then pick the root folder, quality profile and metadata profile. Leave **Enable Scan** on.
 
-Art Fetching: Integrating Cover Art Archive for release group imagery.
+### Environment variables
 
-Technical Setup
-Development Environment
-Clone the repository.
+| Variable | Purpose |
+|---|---|
+| `PORT` | Port to listen on (default `5055`) |
+| `TZ` | Time zone |
+| `LASTFM_API_KEY` | Optional. Popular artists/albums/tracks on Discover |
+| `FANART_API_KEY` | Optional. Artist images |
+| `AUTH_PROXY_HEADER` | Optional. Enables forward-auth sign-in (see below) |
+| `AUTH_PROXY_EMAIL_HEADER` | Optional. Header carrying the user's email |
+| `AUTH_PROXY_AUTO_CREATE` | Optional. `true` creates unknown proxy users with default permissions |
 
-Install dependencies: yarn install
+## Signing in with Authentik
 
-Start development server: yarn dev
+There are two ways, and they work together.
 
-Configure Lidarr via Settings > Services.
+**Jellyfin accounts backed by Authentik (LDAP).** If Jellyfin authenticates against Authentik through the LDAP plugin, choose Jellyfin in setup. Users sign in with their Authentik username and password.
 
-Contribution Guidelines
-Fork and Branch: Create a specific branch for any bug fix or feature.
+**Forward-auth single sign-on.** Put MusicSeerr behind your reverse proxy with an Authentik proxy provider in forward-auth mode, then set:
 
-Pull Requests: All code must be submitted via PR. Direct pushes to main are restricted to maintain stability.
+```yaml
+    environment:
+      AUTH_PROXY_HEADER: X-authentik-username
+      AUTH_PROXY_EMAIL_HEADER: X-authentik-email
+      # AUTH_PROXY_AUTO_CREATE: 'true'
+```
 
-Issue Tracking: Use the GitHub Issues tab to report bugs or claim active development tasks.
+Users who are signed in to Authentik land in MusicSeerr without a second login. They're matched to existing accounts (for example imported Jellyfin users) by username or email. Unknown users are refused unless `AUTH_PROXY_AUTO_CREATE` is `true`.
 
-License
-Distributed under the MIT License. Derived from Overseerr.
+> Only enable forward-auth when MusicSeerr can be reached **solely** through the proxy. If the container's port is reachable directly, anyone can send the header themselves. Don't publish the port on the host, or firewall it to the proxy.
+
+Signing out of MusicSeerr ends its session, but the next visit signs the user straight back in from Authentik. Sign out of Authentik to fully sign out.
+
+## Development
+
+```bash
+pnpm install
+pnpm dev        # http://localhost:5055
+pnpm typecheck
+pnpm lint
+pnpm build      # what the Docker image runs
+```
+
+## License
+
+MIT. Derived from Seerr/Overseerr.
