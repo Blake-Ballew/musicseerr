@@ -8,8 +8,6 @@ import { Transition } from '@headlessui/react';
 import {
   ClockIcon,
   CogIcon,
-  ExclamationTriangleIcon,
-  EyeSlashIcon,
   MusicalNoteIcon,
   SparklesIcon,
   UsersIcon,
@@ -69,29 +67,6 @@ const SidebarLinks: SidebarLinkProps[] = [
     messagesKey: 'requests',
     svgIcon: <ClockIcon className="mr-3 h-6 w-6" />,
     activeRegExp: /^\/requests/,
-  },
-  {
-    href: '/blocklist',
-    messagesKey: 'blocklist',
-    svgIcon: <EyeSlashIcon className="mr-3 h-6 w-6" />,
-    activeRegExp: /^\/blocklist/,
-    requiredPermission: [
-      Permission.MANAGE_BLOCKLIST,
-      Permission.VIEW_BLOCKLIST,
-    ],
-    permissionType: 'or',
-  },
-  {
-    href: '/issues',
-    messagesKey: 'issues',
-    svgIcon: <ExclamationTriangleIcon className="mr-3 h-6 w-6" />,
-    activeRegExp: /^\/issues/,
-    requiredPermission: [
-      Permission.MANAGE_ISSUES,
-      Permission.CREATE_ISSUES,
-      Permission.VIEW_ISSUES,
-    ],
-    permissionType: 'or',
   },
   {
     href: '/users',
