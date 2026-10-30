@@ -1,8 +1,7 @@
 services:
   musicseerr:
     # Published by .github/workflows/docker-publish.yml on every push to main
-    # (replace OWNER with the GitHub account that hosts your fork)
-    image: ghcr.io/OWNER/musicseerr:latest
+    image: ghcr.io/blake-ballew/musicseerr:latest
     container_name: musicseerr
     restart: unless-stopped
     ports:
