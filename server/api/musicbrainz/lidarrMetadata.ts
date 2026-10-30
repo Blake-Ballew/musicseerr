@@ -95,6 +95,16 @@ const get = async <T>(path: string, params?: Record<string, string>) => {
   return data;
 };
 
+/** Turn a MusicBrainz (Lucene) query into plain search words */
+const plainQuery = (query: string) =>
+  query
+    .replace(/\b[a-z]+:/gi, ' ')
+    .replace(/\b(AND|OR|NOT)\b/g, ' ')
+    .replace(/\\(.)/g, '$1')
+    .replace(/["()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const image = (images: LmdImage[] | undefined, ...types: string[]) => {
   for (const type of types) {
     const found = images?.find((i) => i.CoverType === type);
@@ -169,7 +179,10 @@ class LidarrMetadata {
     limit: number,
     offset: number
   ): Promise<MusicSearchResults> {
-    const data = await get<LmdArtist[]>('/search', { type: 'artist', query });
+    const data = await get<LmdArtist[]>('/search', {
+      type: 'artist',
+      query: plainQuery(query),
+    });
     return page(data.map(toArtist), limit, offset);
   }
 
@@ -178,7 +191,10 @@ class LidarrMetadata {
     limit: number,
     offset: number
   ): Promise<MusicSearchResults> {
-    const data = await get<LmdAlbum[]>('/search', { type: 'album', query });
+    const data = await get<LmdAlbum[]>('/search', {
+      type: 'album',
+      query: plainQuery(query),
+    });
     return page(data.map(toAlbum), limit, offset);
   }
 

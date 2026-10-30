@@ -47,6 +47,28 @@ Then open `http://<host>:5757` and follow setup:
 | `AUTH_PROXY_HEADER` | Optional. Enables forward-auth sign-in (see below) |
 | `AUTH_PROXY_EMAIL_HEADER` | Optional. Header carrying the user's email |
 | `AUTH_PROXY_AUTO_CREATE` | Optional. `true` creates unknown proxy users with default permissions |
+| `MUSIC_UPLOAD_DIR` | Optional. Enables album uploads (see below). Inbox folder inside this container |
+| `LIDARR_UPLOAD_DIR` | Optional. The same inbox as Lidarr sees it, if mounted at a different path |
+
+## Uploading your own albums
+
+Admins get an **Upload Music** page for CD rips and purchased downloads. Drag in an album folder; MusicSeerr reads the tags, checks for common problems (mixed albums, missing tags, duplicate track numbers), finds the album, and after you confirm, has Lidarr import it into the library. The page includes ripping instructions for less technical users.
+
+Uploads need a folder that both containers can see. Mount the same host folder into both and point MusicSeerr at it:
+
+```yaml
+  musicseerr:
+    environment:
+      MUSIC_UPLOAD_DIR: /music-inbox
+    volumes:
+      - /path/to/music-inbox:/music-inbox
+
+  lidarr:
+    volumes:
+      - /path/to/music-inbox:/music-inbox
+```
+
+If Lidarr mounts it somewhere else, set `LIDARR_UPLOAD_DIR` to Lidarr's path. Lidarr only imports files it can match to the chosen album; anything it rejects stays in the inbox and the page shows why.
 
 ## Signing in with Authentik
 

@@ -6,6 +6,7 @@ import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import {
+  ArrowUpTrayIcon,
   ClockIcon,
   CogIcon,
   MusicalNoteIcon,
@@ -23,6 +24,7 @@ export const menuMessages = defineMessages('components.Layout.Sidebar', {
   dashboard: 'Discover',
   browsemusic: 'Browse Music',
   requests: 'Requests',
+  upload: 'Upload Music',
   blocklist: 'Blocklist',
   issues: 'Issues',
   users: 'Users',
@@ -60,13 +62,20 @@ const SidebarLinks: SidebarLinkProps[] = [
     href: '/music/search?query=',
     messagesKey: 'browsemusic',
     svgIcon: <MusicalNoteIcon className="mr-3 h-6 w-6" />,
-    activeRegExp: /^\/music/,
+    activeRegExp: /^\/music(?!\/upload)/,
   },
   {
     href: '/requests',
     messagesKey: 'requests',
     svgIcon: <ClockIcon className="mr-3 h-6 w-6" />,
     activeRegExp: /^\/requests/,
+  },
+  {
+    href: '/music/upload',
+    messagesKey: 'upload',
+    svgIcon: <ArrowUpTrayIcon className="mr-3 h-6 w-6" />,
+    activeRegExp: /^\/music\/upload/,
+    requiredPermission: Permission.ADMIN,
   },
   {
     href: '/users',

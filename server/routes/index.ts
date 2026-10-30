@@ -42,6 +42,7 @@ import searchRoutes from './search';
 import serviceRoutes from './service';
 import tvRoutes from './tv';
 import musicRoutes from './music';
+import musicUploadRoutes from './musicUploads';
 import user from './user';
 
 const router = Router();
@@ -166,6 +167,11 @@ router.use(
 );
 router.use('/movie', isAuthenticated(), movieRoutes);
 router.use('/tv', isAuthenticated(), tvRoutes);
+router.use(
+  '/music/uploads',
+  isAuthenticated(Permission.ADMIN),
+  musicUploadRoutes
+);
 router.use('/music', isAuthenticated(), musicRoutes);
 router.use('/media', isAuthenticated(), mediaRoutes);
 router.use('/person', isAuthenticated(), personRoutes);

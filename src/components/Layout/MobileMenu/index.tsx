@@ -4,6 +4,7 @@ import useClickOutside from '@app/hooks/useClickOutside';
 import { Permission, useUser } from '@app/hooks/useUser';
 import { Transition } from '@headlessui/react';
 import {
+  ArrowUpTrayIcon,
   ClockIcon,
   CogIcon,
   EllipsisHorizontalIcon,
@@ -12,6 +13,7 @@ import {
   UsersIcon,
 } from '@heroicons/react/24/outline';
 import {
+  ArrowUpTrayIcon as FilledArrowUpTrayIcon,
   ClockIcon as FilledClockIcon,
   CogIcon as FilledCogIcon,
   MusicalNoteIcon as FilledMusicalNoteIcon,
@@ -77,7 +79,7 @@ const MobileMenu = ({
       content: intl.formatMessage(menuMessages.browsemusic),
       svgIcon: <MusicalNoteIcon className="h-6 w-6" />,
       svgIconSelected: <FilledMusicalNoteIcon className="h-6 w-6" />,
-      activeRegExp: /^\/music/,
+      activeRegExp: /^\/music(?!\/upload)/,
     },
     {
       href: '/requests',
@@ -85,6 +87,14 @@ const MobileMenu = ({
       svgIcon: <ClockIcon className="h-6 w-6" />,
       svgIconSelected: <FilledClockIcon className="h-6 w-6" />,
       activeRegExp: /^\/requests/,
+    },
+    {
+      href: '/music/upload',
+      content: intl.formatMessage(menuMessages.upload),
+      svgIcon: <ArrowUpTrayIcon className="h-6 w-6" />,
+      svgIconSelected: <FilledArrowUpTrayIcon className="h-6 w-6" />,
+      activeRegExp: /^\/music\/upload/,
+      requiredPermission: Permission.ADMIN,
     },
     {
       href: '/users',

@@ -487,6 +487,53 @@ class LidarrAPI extends ServarrBase<{ albumId: number }> {
     setTimeout(() => attempt(6).catch(() => undefined), 45000);
   }
 
+  /**
+   * Import a folder of tagged files the way a finished download is imported,
+   * and wait for Lidarr to finish. Files Lidarr can't match stay in place.
+   */
+  public async importFolder(path: string, timeoutMs = 10 * 60 * 1000) {
+    const { data: command } = await this.axios.post<{
+      id: number;
+      status: string;
+    }>('/command', {
+      name: 'DownloadedAlbumsScan',
+      path,
+      importMode: 'Move',
+    });
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const { data } = await this.axios.get<{
+        status: string;
+        message?: string;
+      }>(`/command/${command.id}`);
+      if (['completed', 'failed', 'aborted', 'cancelled'].includes(data.status)) {
+        return data;
+      }
+    }
+    throw new Error('Lidarr import timed out');
+  }
+
+  /** Why Lidarr won't import the files in a folder (Manual Import's view) */
+  public async getImportRejections(
+    folder: string
+  ): Promise<{ path: string; reasons: string[] }[]> {
+    const { data } = await this.axios.get<
+      {
+        path: string;
+        rejections?: { reason: string }[];
+      }[]
+    >('/manualimport', {
+      params: { folder, filterExistingFiles: false },
+      timeout: 120000,
+    });
+    return data.map((item) => ({
+      path: item.path,
+      reasons: (item.rejections ?? []).map((r) => r.reason),
+    }));
+  }
+
   public async searchAlbum(albumId: number): Promise<void> {
     logger.info('Executing album search command', {
       label: 'Lidarr API',
