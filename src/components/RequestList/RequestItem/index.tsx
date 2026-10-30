@@ -412,7 +412,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
           year: undefined,
           href: `/music/album/${musicBrainzId}`,
           poster: musicBrainzId
-            ? `https://coverartarchive.org/release-group/${musicBrainzId}/front-250`
+            ? `/api/v1/music/cover/${musicBrainzId}`
             : undefined,
           backdrop: undefined,
         }
@@ -738,7 +738,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                   <TrashIcon />
                   <span>{intl.formatMessage(messages.deleterequest)}</span>
                 </ConfirmButton>
-                {request.canRemove && (
+                {request.canRemove && !isMusic && (
                   <ConfirmButton
                     onClick={() => deleteMediaFile()}
                     confirmText={intl.formatMessage(globalMessages.areyousure)}

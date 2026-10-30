@@ -331,7 +331,7 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
           year: undefined,
           href: `/music/album/${musicBrainzId}`,
           poster: musicBrainzId
-            ? `https://coverartarchive.org/release-group/${musicBrainzId}/front-250`
+            ? `/api/v1/music/cover/${musicBrainzId}`
             : undefined,
           backdrop: undefined,
         }

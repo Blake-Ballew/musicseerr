@@ -475,6 +475,21 @@ musicRoutes.get('/artist/:id', async (req, res, next) => {
 // GET /album/:id
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// GET /cover/:id  (release group cover, via whichever source is reachable)
+// ---------------------------------------------------------------------------
+
+musicRoutes.get('/cover/:id', async (req, res) => {
+  const coverUrl = await createMusicBrainz()
+    .getCoverArt(req.params.id)
+    .catch(() => null);
+  if (!coverUrl) {
+    return res.status(404).end();
+  }
+  res.set('Cache-Control', 'public, max-age=86400');
+  return res.redirect(302, coverUrl);
+});
+
 musicRoutes.get('/album/:id', async (req, res, next) => {
   try {
     const mb = createMusicBrainz();

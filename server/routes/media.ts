@@ -207,6 +207,14 @@ mediaRoutes.delete(
         where: { id: Number(req.params.id) },
       });
 
+      // File removal only knows Radarr/Sonarr; never let it act on an album
+      if (media.mediaType === MediaType.MUSIC) {
+        return next({
+          status: 400,
+          message: 'Removing music files is not supported. Use Lidarr.',
+        });
+      }
+
       const is4k = String(req.query.is4k) === 'true';
       const isMovie = media.mediaType === MediaType.MOVIE;
 
