@@ -1,3 +1,4 @@
+import MusicBrainz from '@server/api/musicbrainz';
 import TheMovieDb from '@server/api/themoviedb';
 import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
 import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
@@ -175,6 +176,34 @@ export class MediaRequest {
         }
       }
 
+      // Quick-request buttons on cards only know the album, so look up the
+      // artist (Lidarr needs its ID to add the album) and the real titles
+      let { artistMusicBrainzId, artistName, albumTitle } = requestBody;
+      if (
+        !artistMusicBrainzId ||
+        !artistName ||
+        artistName === 'Unknown Artist' ||
+        !albumTitle ||
+        albumTitle === 'Unknown Album'
+      ) {
+        const album = await new MusicBrainz(
+          process.env.FANART_API_KEY || undefined,
+          process.env.LASTFM_API_KEY || undefined
+        ).getAlbum(requestBody.musicBrainzId);
+        artistMusicBrainzId = artistMusicBrainzId || album.artistId;
+        artistName =
+          artistName && artistName !== 'Unknown Artist'
+            ? artistName
+            : album.artistName;
+        albumTitle =
+          albumTitle && albumTitle !== 'Unknown Album'
+            ? albumTitle
+            : album.title;
+      }
+      if (!artistMusicBrainzId) {
+        throw new Error('Could not find the artist for this album.');
+      }
+
       await mediaRepository.save(media);
 
       const request = new MediaRequest({
@@ -200,9 +229,9 @@ export class MediaRequest {
         tags: requestBody.tags,
         isAutoRequest: options.isAutoRequest ?? false,
         musicBrainzId: requestBody.musicBrainzId,
-        artistMusicBrainzId: requestBody.artistMusicBrainzId,
-        artistName: requestBody.artistName,
-        albumTitle: requestBody.albumTitle,
+        artistMusicBrainzId,
+        artistName,
+        albumTitle,
         metadataProfileId: requestBody.metadataProfileId,
       });
 

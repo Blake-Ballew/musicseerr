@@ -1,3 +1,4 @@
+import MusicBrainz from '@server/api/musicbrainz';
 import LidarrAPI from '@server/api/servarr/lidarr';
 import type { RadarrMovieOptions } from '@server/api/servarr/radarr';
 import RadarrAPI from '@server/api/servarr/radarr';
@@ -979,6 +980,31 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           entity.status = MediaRequestStatus.COMPLETED;
           await requestRepository.save(entity);
           return;
+        }
+
+        // Requests made before the artist lookup existed (or retried ones)
+        // may be missing the artist
+        if (entity.musicBrainzId && !entity.artistMusicBrainzId) {
+          try {
+            const album = await new MusicBrainz(
+              process.env.FANART_API_KEY || undefined,
+              process.env.LASTFM_API_KEY || undefined
+            ).getAlbum(entity.musicBrainzId);
+            entity.artistMusicBrainzId = album.artistId || null;
+            if (!entity.artistName || entity.artistName === 'Unknown Artist') {
+              entity.artistName = album.artistName;
+            }
+            await getRepository(MediaRequest).update(entity.id, {
+              artistMusicBrainzId: entity.artistMusicBrainzId,
+              artistName: entity.artistName,
+            });
+          } catch (e) {
+            logger.warn('Could not look up the artist for a music request', {
+              label: 'Media Request',
+              requestId: entity.id,
+              errorMessage: e.message,
+            });
+          }
         }
 
         if (!entity.musicBrainzId || !entity.artistMusicBrainzId) {
