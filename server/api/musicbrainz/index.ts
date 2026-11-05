@@ -384,10 +384,12 @@ class MusicBrainz extends ExternalAPI {
   }
 
   public async getCoverArt(releaseGroupId: string): Promise<string | null> {
-    if (Date.now() < musicBrainzUnavailableUntil) {
-      return lidarrMetadata.getCoverArt(releaseGroupId).catch(() => null);
-    }
-    return this.caaGetCoverArt(releaseGroupId);
+    // Lidarr's metadata is much faster than the Cover Art Archive and can
+    // use any release's cover, so only ask the archive when it has none
+    const cover = await lidarrMetadata
+      .getCoverArt(releaseGroupId)
+      .catch(() => null);
+    return cover ?? this.caaGetCoverArt(releaseGroupId);
   }
 
   private async caaGetCoverArt(releaseGroupId: string): Promise<string | null> {
@@ -419,12 +421,9 @@ class MusicBrainz extends ExternalAPI {
       }
 
       return null;
-    } catch (e) {
-      // Cover art isn't available for every release group; if the archive
-      // itself is unreachable, use Lidarr's copy
-      return isUnavailableError(e)
-        ? lidarrMetadata.getCoverArt(releaseGroupId).catch(() => null)
-        : null;
+    } catch {
+      // Cover art isn't available for every release group
+      return null;
     }
   }
 

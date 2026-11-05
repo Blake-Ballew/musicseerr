@@ -232,7 +232,11 @@ class LidarrMetadata {
 
   public async getCoverArt(mbId: string): Promise<string | null> {
     const album = await get<LmdAlbum>(`/album/${mbId}`);
-    return image(album.images, 'Cover');
+    // shortcut: swaps the archive's 1200px thumbnail for its 500px one by
+    // file name, drop if Lidarr's image URLs change shape
+    return (
+      image(album.images, 'Cover')?.replace(/-1200\.jpg$/, '-500.jpg') ?? null
+    );
   }
 
   public async getArtistImages(
