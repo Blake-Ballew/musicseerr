@@ -4,6 +4,7 @@ import Button from '@app/components/Common/Button';
 import Header from '@app/components/Common/Header';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
+import CustomEditor from '@app/components/MusicUpload/CustomEditor';
 import RipGuide from '@app/components/MusicUpload/RipGuide';
 import defineMessages from '@app/utils/defineMessages';
 import {
@@ -34,6 +35,7 @@ const messages = defineMessages('components.MusicUpload', {
   dropTitle: 'Drag an album folder here',
   dropOr: 'or',
   chooseFolder: 'Choose album folder',
+  chooseFiles: 'Choose files',
   dropHint: 'One album at a time. FLAC is best, MP3 works too.',
   oneAlbumOnly:
     'That looks like more than one folder. Upload one album at a time (a 2-CD set counts as one album).',
@@ -83,6 +85,7 @@ const messages = defineMessages('components.MusicUpload', {
   statusfailed: 'Failed',
   newUpload: 'Upload another album',
   backToUpload: '← Upload a different album',
+  notInDatabase: 'Not in MusicBrainz? Add it with your own details',
 });
 
 const AUDIO = [
@@ -186,8 +189,14 @@ const MusicUpload = () => {
   const [showTracks, setShowTracks] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [customMode, setCustomMode] = useState(false);
+  const filesInput = useRef<HTMLInputElement>(null);
 
-  const { data, mutate } = useSWR<{ configured: boolean; uploads: Upload[] }>(
+  const { data, mutate } = useSWR<{
+    configured: boolean;
+    customConfigured: boolean;
+    uploads: Upload[];
+  }>(
     '/api/v1/music/uploads',
     {
       refreshInterval: (latest) =>
@@ -246,6 +255,7 @@ const MusicUpload = () => {
     });
     setShowTracks(false);
     setSearchText('');
+    setCustomMode(false);
 
     try {
       const { data: upload } = await axios.post<Upload>(
@@ -442,12 +452,26 @@ const MusicUpload = () => {
               <p className="my-2 text-gray-400">
                 {intl.formatMessage(messages.dropOr)}
               </p>
-              <Button
-                buttonType="primary"
-                onClick={() => folderInput.current?.click()}
-              >
-                {intl.formatMessage(messages.chooseFolder)}
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button
+                  buttonType="primary"
+                  onClick={() => folderInput.current?.click()}
+                >
+                  {intl.formatMessage(messages.chooseFolder)}
+                </Button>
+                {data.customConfigured && (
+                  <Button onClick={() => filesInput.current?.click()}>
+                    {intl.formatMessage(messages.chooseFiles)}
+                  </Button>
+                )}
+              </div>
+              <input
+                ref={filesInput}
+                type="file"
+                className="hidden"
+                multiple
+                onChange={onPickFolder}
+              />
               <input
                 ref={folderInput}
                 type="file"
@@ -537,7 +561,7 @@ const MusicUpload = () => {
                 </ol>
               )}
 
-              {errors.length > 0 && (
+              {!customMode && errors.length > 0 && (
                 <div className="mt-4">
                   <Alert
                     type="error"
@@ -551,7 +575,7 @@ const MusicUpload = () => {
                   </Alert>
                 </div>
               )}
-              {warnings.length > 0 && (
+              {!customMode && warnings.length > 0 && (
                 <div className="mt-4">
                   <Alert title={intl.formatMessage(messages.warnings)}>
                     <ul className="list-disc space-y-1 pl-4">
@@ -599,6 +623,31 @@ const MusicUpload = () => {
                     </Button>
                   </div>
                 </div>
+              ) : customMode && canChoose ? (
+                <>
+                  {active.status === 'failed' && (
+                    <div className="mb-4">
+                      <Alert
+                        type="error"
+                        title={intl.formatMessage(messages.failed)}
+                      >
+                        {active.result?.message}
+                      </Alert>
+                    </div>
+                  )}
+                  <CustomEditor
+                    key={active.id}
+                    upload={active}
+                    onSaved={mutate}
+                    onBack={() => setCustomMode(false)}
+                    onError={(e) =>
+                      addToast(errorMessage(e), {
+                        appearance: 'error',
+                        autoDismiss: true,
+                      })
+                    }
+                  />
+                </>
               ) : (
                 <>
                   {(active.status === 'needs-review' ||
@@ -759,6 +808,16 @@ const MusicUpload = () => {
                     </p>
                   )}
 
+                  {canChoose && data.customConfigured && (
+                    <button
+                      type="button"
+                      className="mt-3 text-sm text-indigo-400 hover:underline"
+                      onClick={() => setCustomMode(true)}
+                    >
+                      {intl.formatMessage(messages.notInDatabase)}
+                    </button>
+                  )}
+
                   <div className="mt-5 flex flex-wrap justify-end gap-2">
                     <Button
                       buttonType="danger"
@@ -811,6 +870,7 @@ const MusicUpload = () => {
                   onClick={() => {
                     setActiveId(u.id);
                     setShowTracks(false);
+                    setCustomMode(!!u.custom);
                   }}
                 >
                   <p className="truncate font-semibold text-white">

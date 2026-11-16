@@ -467,6 +467,35 @@ class JellyfinAPI extends ExternalAPI {
       throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
     }
   }
+
+  /** Start a scan of every library (returns before the scan finishes) */
+  public async refreshLibraries(): Promise<void> {
+    await this.axios.post('/Library/Refresh');
+  }
+
+  public async searchAlbumArtists(term: string): Promise<string[]> {
+    const { data } = await this.axios.get<{ Items: { Name: string }[] }>(
+      '/Artists/AlbumArtists',
+      { params: { SearchTerm: term, Limit: 10 } }
+    );
+    return data.Items.map((i) => i.Name);
+  }
+
+  public async searchMusicAlbums(
+    term: string
+  ): Promise<{ name: string; albumArtist?: string }[]> {
+    const { data } = await this.axios.get<{
+      Items: { Name: string; AlbumArtist?: string }[];
+    }>('/Items', {
+      params: {
+        SearchTerm: term,
+        IncludeItemTypes: 'MusicAlbum',
+        Recursive: true,
+        Limit: 20,
+      },
+    });
+    return data.Items.map((i) => ({ name: i.Name, albumArtist: i.AlbumArtist }));
+  }
 }
 
 export default JellyfinAPI;

@@ -3,15 +3,24 @@ import type {
   MusicAlbumResult,
   MusicArtistResult,
 } from '@server/api/musicbrainz/interfaces';
+import JellyfinAPI from '@server/api/jellyfin';
 import LidarrAPI from '@server/api/servarr/lidarr';
 import { lidarrScanner } from '@server/lib/scanners/lidarr';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
+import { getHostname } from '@server/utils/getHostname';
 import { randomUUID } from 'crypto';
 import type { Dirent } from 'fs';
 import { createWriteStream, promises as fs } from 'fs';
 import { parseFile } from 'music-metadata';
+import {
+  ByteVector,
+  Picture,
+  PictureType,
+  File as TagFile,
+} from 'node-taglib-sharp';
 import path from 'path';
+import sharp from 'sharp';
 import type { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 
@@ -94,6 +103,8 @@ export interface MusicUpload {
   issues?: UploadIssue[];
   candidates?: UploadCandidate[];
   selectedId?: string;
+  /** The last custom import form, so a retry starts from it */
+  custom?: CustomImport;
   result?: {
     message: string;
     importedTracks?: number;
@@ -758,4 +769,367 @@ export const deleteUpload = async (id: string) => {
     await fs.rm(albumDir(id), { recursive: true, force: true });
   }
   await fs.rm(manifestPath(id), { force: true });
+};
+
+/*
+ * Custom imports: music that isn't in MusicBrainz, so Lidarr can't take it.
+ * The tags are rewritten from what the user typed and the files go into a
+ * separate library folder that only Jellyfin reads.
+ */
+
+export interface CustomTrack {
+  path: string;
+  title: string;
+  artist?: string;
+  track: number;
+  disc: number;
+}
+
+export interface CustomImport {
+  artist: string;
+  album: string;
+  year?: string;
+  genre?: string;
+  /** "Single" with several tracks makes each track its own single */
+  type: 'Album' | 'EP' | 'Single';
+  /** An uploaded image file to use as the cover */
+  cover?: string;
+  tracks: CustomTrack[];
+}
+
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png'];
+const CUSTOM_TYPES = ['Album', 'EP', 'Single'];
+
+export const customMusicDir = () => process.env.CUSTOM_MUSIC_DIR || null;
+
+export const customConfigured = () => !!customMusicDir();
+
+/** A file or folder name that's safe on Linux, SMB shares and Jellyfin */
+export const safeName = (s: string) =>
+  s
+    .replace(/[\\/:*?"<>|\p{Cc}]/gu, '_')
+    .replace(/^[. ]+|[. ]+$/g, '')
+    .slice(0, 120) || '_';
+
+const isImage = (p: string) =>
+  IMAGE_EXTENSIONS.includes(path.extname(p).toLowerCase());
+
+/** The albums or singles a custom import turns into */
+export const customReleases = (c: CustomImport) =>
+  c.type === 'Single' && c.tracks.length > 1
+    ? c.tracks.map((t) => ({
+        title: t.title,
+        tracks: [{ ...t, track: 1, disc: 1 }],
+      }))
+    : [{ title: c.album, tracks: c.tracks }];
+
+const cleanCustom = (upload: MusicUpload, input: unknown): CustomImport => {
+  const raw = (input ?? {}) as Record<string, unknown>;
+  const text = (v: unknown, max = 200) =>
+    typeof v === 'string' ? v.trim().slice(0, max) : '';
+  const count = (v: unknown) => Math.max(1, Math.floor(Number(v)) || 1);
+  const audio = new Set(audioFiles(upload).map((f) => f.path));
+
+  const custom: CustomImport = {
+    artist: text(raw.artist),
+    album: text(raw.album),
+    year: text(raw.year, 4) || undefined,
+    genre: text(raw.genre, 60) || undefined,
+    type: (CUSTOM_TYPES.includes(raw.type as string)
+      ? raw.type
+      : 'Album') as CustomImport['type'],
+    cover: text(raw.cover, 500) || undefined,
+    tracks: (Array.isArray(raw.tracks) ? raw.tracks : []).map(
+      (t: Record<string, unknown>) => ({
+        path: text(t?.path, 500),
+        title: text(t?.title),
+        artist: text(t?.artist) || undefined,
+        track: count(t?.track),
+        disc: count(t?.disc),
+      })
+    ),
+  };
+
+  if (!custom.artist) throw new Error('Enter the artist.');
+  if (!custom.tracks.length) throw new Error('Choose at least one track.');
+  if (custom.tracks.some((t) => !audio.has(t.path))) {
+    throw new Error('A track is not part of this upload.');
+  }
+  if (new Set(custom.tracks.map((t) => t.path)).size !== custom.tracks.length) {
+    throw new Error('A track is listed twice.');
+  }
+  if (custom.tracks.some((t) => !t.title)) {
+    throw new Error('Every track needs a title.');
+  }
+  if (custom.year && !/^\d{4}$/.test(custom.year)) {
+    throw new Error('The year must be 4 digits, like 2019.');
+  }
+  if (
+    custom.cover &&
+    (!isImage(custom.cover) ||
+      !upload.files.some((f) => f.path === custom.cover))
+  ) {
+    throw new Error('The cover must be an uploaded JPG or PNG.');
+  }
+  for (const r of customReleases(custom)) {
+    if (!r.title) throw new Error('Enter the album title.');
+    const numbers = r.tracks.map((t) => `${t.disc}-${t.track}`);
+    if (new Set(numbers).size !== numbers.length) {
+      throw new Error('Two tracks have the same disc and track number.');
+    }
+  }
+  return custom;
+};
+
+const releaseFolder = (c: CustomImport, title: string) =>
+  path.join(
+    customMusicDir() ?? '',
+    safeName(c.artist),
+    safeName(c.year ? `${title} (${c.year})` : title)
+  );
+
+export const trackFileName = (t: CustomTrack, discCount: number) =>
+  `${discCount > 1 ? `${t.disc}-` : ''}${String(t.track).padStart(
+    2,
+    '0'
+  )} - ${safeName(t.title)}${path.extname(t.path).toLowerCase()}`;
+
+const jellyfinClient = () => {
+  const { jellyfin } = getSettings();
+  return jellyfin.apiKey && jellyfin.ip
+    ? new JellyfinAPI(getHostname(), jellyfin.apiKey)
+    : null;
+};
+
+/** Artist names already in Jellyfin, so one artist is spelled one way */
+export const suggestArtists = async (term: string) =>
+  (await jellyfinClient()
+    ?.searchAlbumArtists(term)
+    .catch(() => [])) ?? [];
+
+/** Albums in Jellyfin (from either library folder) that match these */
+const findDuplicates = async (c: CustomImport) => {
+  const jf = jellyfinClient();
+  const found: string[] = [];
+  for (const r of customReleases(c)) {
+    const albums =
+      (await jf?.searchMusicAlbums(r.title).catch(() => [])) ?? [];
+    if (
+      albums.some(
+        (a) =>
+          normalise(a.name) === normalise(r.title) &&
+          normalise(a.albumArtist) === normalise(c.artist)
+      )
+    ) {
+      found.push(`${c.artist} – ${r.title}`);
+    }
+  }
+  return found;
+};
+
+/** The cover as a JPEG, and whether it should replace the embedded art */
+const loadCover = async (
+  upload: MusicUpload,
+  c: CustomImport,
+  tracks: CustomTrack[]
+) => {
+  const images = upload.files.map((f) => f.path).filter(isImage);
+  const chosen =
+    c.cover ??
+    images.find((p) => /^(cover|folder|front)\./i.test(path.basename(p))) ??
+    images[0];
+  let source: Buffer | undefined;
+  if (chosen) {
+    source = await fs.readFile(path.join(albumDir(upload.id), chosen));
+  } else {
+    // No image uploaded: keep each file's own art and copy it to cover.jpg
+    for (const t of tracks) {
+      const meta = await parseFile(
+        path.join(albumDir(upload.id), t.path)
+      ).catch(() => null);
+      const picture = meta?.common.picture?.[0];
+      if (picture) {
+        source = Buffer.from(picture.data);
+        break;
+      }
+    }
+  }
+  if (!source) return null;
+  const data = await sharp(source)
+    .rotate()
+    .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  return { data, embed: !!chosen };
+};
+
+const writeTags = (
+  file: string,
+  c: CustomImport,
+  album: string,
+  t: CustomTrack,
+  tracks: CustomTrack[],
+  cover: { data: Buffer; embed: boolean } | null
+) => {
+  const f = TagFile.createFromPath(file);
+  try {
+    const tag = f.tag;
+    tag.title = t.title;
+    tag.performers = [t.artist || c.artist];
+    tag.albumArtists = [c.artist];
+    tag.album = album;
+    tag.year = Number(c.year) || 0;
+    tag.track = t.track;
+    tag.trackCount = tracks.filter((x) => x.disc === t.disc).length;
+    tag.disc = t.disc;
+    tag.discCount = Math.max(...tracks.map((x) => x.disc));
+    if (c.genre) tag.genres = [c.genre];
+    if (cover?.embed) {
+      tag.pictures = [
+        Picture.fromFullData(
+          ByteVector.fromByteArray(cover.data),
+          PictureType.FrontCover,
+          'image/jpeg',
+          ''
+        ),
+      ];
+    }
+    f.save();
+  } finally {
+    f.dispose();
+  }
+};
+
+const runCustomImport = async (upload: MusicUpload, c: CustomImport) => {
+  const done: string[] = [];
+  for (const [i, r] of customReleases(c).entries()) {
+    const folder = releaseFolder(c, r.title);
+    // Built in a hidden folder and renamed at the end, so a failure never
+    // leaves half an album in the library
+    const partial = path.join(
+      path.dirname(folder),
+      `.partial-${upload.id}-${i}`
+    );
+    await fs.mkdir(partial, { recursive: true, mode: 0o777 });
+    try {
+      const cover = await loadCover(upload, c, r.tracks);
+      const discCount = Math.max(...r.tracks.map((t) => t.disc));
+      for (const t of r.tracks) {
+        const source = path.join(albumDir(upload.id), t.path);
+        writeTags(source, c, r.title, t, r.tracks, cover);
+        // Copy, not rename: the inbox and library are separate mounts
+        const target = path.join(partial, trackFileName(t, discCount));
+        await fs.copyFile(source, target);
+        await fs.chmod(target, 0o666);
+      }
+      if (cover) {
+        const coverPath = path.join(partial, 'cover.jpg');
+        await fs.writeFile(coverPath, cover.data);
+        await fs.chmod(coverPath, 0o666);
+      }
+      // Open permissions like the inbox, so the host user can merge later
+      await fs.chmod(path.dirname(folder), 0o777);
+      await fs.chmod(partial, 0o777);
+      await fs.rename(partial, folder);
+      done.push(folder);
+    } catch (e) {
+      await fs.rm(partial, { recursive: true, force: true });
+      throw new Error(
+        done.length
+          ? `${e.message} (${done.length} of the singles were already added)`
+          : e.message
+      );
+    }
+  }
+
+  const used = new Set(c.tracks.map((t) => t.path));
+  const left = audioFiles(upload).filter((f) => !used.has(f.path)).length;
+  if (left === 0) {
+    await fs.rm(albumDir(upload.id), { recursive: true, force: true });
+  }
+  const names = done
+    .map((d) => path.relative(customMusicDir() ?? '', d).replace(/\\/g, '/'))
+    .join(', ');
+  upload.status = 'imported';
+  upload.selectedId = undefined;
+  upload.result = {
+    message: `Added ${c.tracks.length} tracks to ${names}.${
+      left ? ` ${left} file(s) you didn't choose are still in the upload.` : ''
+    }`,
+    importedTracks: c.tracks.length,
+  };
+
+  try {
+    await jellyfinClient()?.refreshLibraries();
+  } catch (e) {
+    logger.warn('Could not ask Jellyfin to scan', {
+      label: 'Music Upload',
+      errorMessage: e.message,
+    });
+  }
+};
+
+export class DuplicateError extends Error {
+  constructor(public duplicates: string[]) {
+    super(`Jellyfin already has ${duplicates.join(', ')}.`);
+  }
+}
+
+export const startCustomImport = async (
+  id: string,
+  input: unknown,
+  allowDuplicates: boolean
+) => {
+  if (!customConfigured()) {
+    throw new Error('Set CUSTOM_MUSIC_DIR to use custom imports.');
+  }
+  const upload = await getUpload(id);
+  if (!upload) throw new Error('Upload not found');
+  if (upload.status === 'importing' || upload.status === 'imported') {
+    throw new Error('This upload is already being added');
+  }
+  const custom = cleanCustom(upload, input);
+  upload.custom = custom;
+  await save(upload);
+
+  for (const r of customReleases(custom)) {
+    const folder = releaseFolder(custom, r.title);
+    const exists = await fs.stat(folder).then(
+      () => true,
+      () => false
+    );
+    if (exists) {
+      throw new Error(
+        `${path
+          .relative(customMusicDir() ?? '', folder)
+          .replace(
+            /\\/g,
+            '/'
+          )} is already in the custom library. Change the title or year, or remove that folder first.`
+      );
+    }
+  }
+  if (!allowDuplicates) {
+    const duplicates = await findDuplicates(custom);
+    if (duplicates.length) throw new DuplicateError(duplicates);
+  }
+
+  upload.status = 'importing';
+  upload.result = undefined;
+  await save(upload);
+
+  // Copying a big album can take a while; the page polls for the result
+  runCustomImport(upload, custom)
+    .catch((e) => {
+      logger.error('Custom music import failed', {
+        label: 'Music Upload',
+        uploadId: id,
+        errorMessage: e.message,
+      });
+      upload.status = 'failed';
+      upload.result = { message: e.message };
+    })
+    .finally(() => save(upload));
+
+  return upload;
 };

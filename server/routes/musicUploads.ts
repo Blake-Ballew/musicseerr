@@ -1,12 +1,16 @@
 import {
   analyzeUpload,
   createUpload,
+  customConfigured,
+  DuplicateError,
   deleteUpload,
   getUpload,
   listUploads,
   saveFile,
   searchForUpload,
+  startCustomImport,
   startImport,
+  suggestArtists,
   uploadsConfigured,
 } from '@server/lib/musicUploads';
 import logger from '@server/logger';
@@ -18,6 +22,7 @@ const musicUploadRoutes = Router();
 musicUploadRoutes.get('/', async (_req, res) => {
   return res.status(200).json({
     configured: uploadsConfigured(),
+    customConfigured: customConfigured(),
     uploads: await listUploads(),
   });
 });
@@ -46,6 +51,11 @@ musicUploadRoutes.post('/', async (req, res, next) => {
     });
     next({ status: 500, message: 'Could not start the upload.' });
   }
+});
+
+musicUploadRoutes.get('/artists', async (req, res) => {
+  const term = String(req.query.q ?? '').trim();
+  return res.status(200).json(term ? await suggestArtists(term) : []);
 });
 
 musicUploadRoutes.get<{ id: string }>('/:id', async (req, res, next) => {
@@ -124,6 +134,32 @@ musicUploadRoutes.post<{ id: string }, unknown, { albumId?: string }>(
     }
   }
 );
+
+// Music that isn't in MusicBrainz: rewrite the tags and skip Lidarr
+musicUploadRoutes.post<
+  { id: string },
+  unknown,
+  { release?: unknown; allowDuplicates?: boolean }
+>('/:id/custom', async (req, res, next) => {
+  try {
+    return res
+      .status(202)
+      .json(
+        await startCustomImport(
+          req.params.id,
+          req.body.release,
+          !!req.body.allowDuplicates
+        )
+      );
+  } catch (e) {
+    if (e instanceof DuplicateError) {
+      return res
+        .status(409)
+        .json({ message: e.message, duplicates: e.duplicates });
+    }
+    next({ status: 400, message: e.message });
+  }
+});
 
 musicUploadRoutes.delete<{ id: string }>('/:id', async (req, res, next) => {
   try {

@@ -76,6 +76,7 @@
     "node-cache": "5.1.2",
     "node-gyp": "9.3.1",
     "node-schedule": "2.1.1",
+    "node-taglib-sharp": "6.0.3",
     "nodemailer": "7.0.12",
     "openpgp": "6.3.0",
     "pg": "8.17.2",

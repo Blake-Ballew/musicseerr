@@ -49,6 +49,7 @@ Then open `http://<host>:5757` and follow setup:
 | `AUTH_PROXY_AUTO_CREATE` | Optional. `true` creates unknown proxy users with default permissions |
 | `MUSIC_UPLOAD_DIR` | Optional. Enables album uploads (see below). Inbox folder inside this container |
 | `LIDARR_UPLOAD_DIR` | Optional. The same inbox as Lidarr sees it, if mounted at a different path |
+| `CUSTOM_MUSIC_DIR` | Optional. Library folder for music that isn't in MusicBrainz (see below) |
 
 ## Uploading your own albums
 
@@ -69,6 +70,26 @@ Uploads need a folder that both containers can see. Mount the same host folder i
 ```
 
 If Lidarr mounts it somewhere else, set `LIDARR_UPLOAD_DIR` to Lidarr's path. Lidarr only imports files it can match to the chosen album; anything it rejects stays in the inbox and the page shows why.
+
+### Music that isn't in MusicBrainz
+
+Lidarr can only import albums that exist in MusicBrainz. For anything else, set `CUSTOM_MUSIC_DIR` and the upload page offers **Add it with your own details**: enter the artist, title, year, genre, cover and track details, and MusicSeerr rewrites the files' tags and saves them as `Artist/Album (Year)/01 - Title.flac` with a `cover.jpg`. Several tracks marked **Single** become one single each. Lidarr isn't involved.
+
+Use a folder Lidarr doesn't manage, and add it to Jellyfin's music library as a second folder:
+
+```yaml
+  musicseerr:
+    environment:
+      CUSTOM_MUSIC_DIR: /music-custom
+    volumes:
+      - /path/to/music-custom:/music-custom
+
+  jellyfin:
+    volumes:
+      - /path/to/music-custom:/data/music-custom:ro
+```
+
+With the Jellyfin API key set in MusicSeerr's settings, MusicSeerr starts a Jellyfin library scan after each import, suggests artist names already in Jellyfin, and warns before adding an album Jellyfin already has. It never overwrites an existing folder.
 
 ## Signing in with Authentik
 
