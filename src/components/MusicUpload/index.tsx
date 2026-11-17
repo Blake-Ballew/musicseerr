@@ -196,17 +196,14 @@ const MusicUpload = () => {
     configured: boolean;
     customConfigured: boolean;
     uploads: Upload[];
-  }>(
-    '/api/v1/music/uploads',
-    {
-      refreshInterval: (latest) =>
-        latest?.uploads.some(
-          (u) => u.status === 'importing' || u.status === 'analyzing'
-        )
-          ? 3000
-          : 0,
-    }
-  );
+  }>('/api/v1/music/uploads', {
+    refreshInterval: (latest) =>
+      latest?.uploads.some(
+        (u) => u.status === 'importing' || u.status === 'analyzing'
+      )
+        ? 3000
+        : 0,
+  });
 
   const active = data?.uploads.find((u) => u.id === activeId) ?? null;
 
@@ -874,9 +871,11 @@ const MusicUpload = () => {
                   }}
                 >
                   <p className="truncate font-semibold text-white">
-                    {u.album?.title
-                      ? `${u.album.artist ?? ''} – ${u.album.title}`
-                      : intl.formatMessage(messages.untitled)}
+                    {u.custom
+                      ? `${u.custom.artist} – ${u.custom.album || u.custom.tracks.map((t) => t.title).join(', ')}`
+                      : u.album?.title
+                        ? `${u.album.artist ?? ''} – ${u.album.title}`
+                        : intl.formatMessage(messages.untitled)}
                   </p>
                   <p className="text-xs text-gray-400">
                     {intl.formatMessage(messages.by, {

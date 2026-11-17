@@ -1,9 +1,9 @@
+import JellyfinAPI from '@server/api/jellyfin';
 import MusicBrainz from '@server/api/musicbrainz';
 import type {
   MusicAlbumResult,
   MusicArtistResult,
 } from '@server/api/musicbrainz/interfaces';
-import JellyfinAPI from '@server/api/jellyfin';
 import LidarrAPI from '@server/api/servarr/lidarr';
 import { lidarrScanner } from '@server/lib/scanners/lidarr';
 import { getSettings } from '@server/lib/settings';
@@ -814,6 +814,12 @@ export const safeName = (s: string) =>
 const isImage = (p: string) =>
   IMAGE_EXTENSIONS.includes(path.extname(p).toLowerCase());
 
+/** Where an uploaded image is on disk, if it really is part of the upload */
+export const uploadedImagePath = (upload: MusicUpload, relative: string) =>
+  isImage(relative) && upload.files.some((f) => f.path === relative)
+    ? path.join(albumDir(upload.id), relative)
+    : null;
+
 /** The albums or singles a custom import turns into */
 export const customReleases = (c: CustomImport) =>
   c.type === 'Single' && c.tracks.length > 1
@@ -912,8 +918,7 @@ const findDuplicates = async (c: CustomImport) => {
   const jf = jellyfinClient();
   const found: string[] = [];
   for (const r of customReleases(c)) {
-    const albums =
-      (await jf?.searchMusicAlbums(r.title).catch(() => [])) ?? [];
+    const albums = (await jf?.searchMusicAlbums(r.title).catch(() => [])) ?? [];
     if (
       albums.some(
         (a) =>

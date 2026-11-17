@@ -242,9 +242,12 @@ const CustomEditor = ({
             className="flex h-32 w-32 items-center justify-center overflow-hidden rounded bg-gray-700 ring-1 ring-gray-600 hover:ring-indigo-500"
             aria-label={intl.formatMessage(messages.chooseCover)}
           >
-            {coverPreview ? (
+            {coverPreview || cover ? (
               <img
-                src={coverPreview}
+                src={
+                  coverPreview ??
+                  `/api/v1/music/uploads/${upload.id}/image?path=${encodeURIComponent(cover ?? '')}`
+                }
                 alt=""
                 className="h-full w-full object-cover"
               />
@@ -321,7 +324,9 @@ const CustomEditor = ({
           </label>
           {!singles && (
             <label>
-              <span className={label}>{intl.formatMessage(messages.album)}</span>
+              <span className={label}>
+                {intl.formatMessage(messages.album)}
+              </span>
               <input
                 type="text"
                 required
@@ -394,7 +399,9 @@ const CustomEditor = ({
                   </th>
                 </>
               )}
-              <th className="px-1 py-2">{intl.formatMessage(messages.title)}</th>
+              <th className="px-1 py-2">
+                {intl.formatMessage(messages.title)}
+              </th>
               <th className="px-1 py-2">
                 {intl.formatMessage(messages.trackArtist)}
               </th>
@@ -418,11 +425,13 @@ const CustomEditor = ({
                   <>
                     <td className="px-1 py-1">
                       <input
-                        type="number"
-                        min={1}
-                        value={r.disc}
+                        type="text"
+                        inputMode="numeric"
+                        value={r.disc || ''}
                         onChange={(e) =>
-                          update(r.path, { disc: Number(e.target.value) })
+                          update(r.path, {
+                            disc: Number(e.target.value.replace(/\D/g, '')),
+                          })
                         }
                         className="w-14"
                         aria-label={intl.formatMessage(messages.disc)}
@@ -430,11 +439,13 @@ const CustomEditor = ({
                     </td>
                     <td className="px-1 py-1">
                       <input
-                        type="number"
-                        min={1}
-                        value={r.track}
+                        type="text"
+                        inputMode="numeric"
+                        value={r.track || ''}
                         onChange={(e) =>
-                          update(r.path, { track: Number(e.target.value) })
+                          update(r.path, {
+                            track: Number(e.target.value.replace(/\D/g, '')),
+                          })
                         }
                         className="w-14"
                         aria-label={intl.formatMessage(messages.number)}

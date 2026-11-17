@@ -1,8 +1,8 @@
 import {
+  DuplicateError,
   analyzeUpload,
   createUpload,
   customConfigured,
-  DuplicateError,
   deleteUpload,
   getUpload,
   listUploads,
@@ -11,6 +11,7 @@ import {
   startCustomImport,
   startImport,
   suggestArtists,
+  uploadedImagePath,
   uploadsConfigured,
 } from '@server/lib/musicUploads';
 import logger from '@server/logger';
@@ -64,6 +65,16 @@ musicUploadRoutes.get<{ id: string }>('/:id', async (req, res, next) => {
     return next({ status: 404, message: 'Upload not found.' });
   }
   return res.status(200).json(upload);
+});
+
+musicUploadRoutes.get<{ id: string }>('/:id/image', async (req, res, next) => {
+  const upload = await getUpload(req.params.id).catch(() => null);
+  const file =
+    upload && uploadedImagePath(upload, String(req.query.path ?? ''));
+  if (!file) {
+    return next({ status: 404, message: 'Image not found.' });
+  }
+  return res.sendFile(file);
 });
 
 // Raw file body, one request per file: ?path=CD1/01 - Song.flac
