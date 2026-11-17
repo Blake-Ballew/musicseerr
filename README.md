@@ -89,7 +89,7 @@ Use a folder Lidarr doesn't manage, and add it to Jellyfin's music library as a 
       - /path/to/music-custom:/data/music-custom:ro
 ```
 
-With the Jellyfin API key set in MusicSeerr's settings, MusicSeerr starts a Jellyfin library scan after each import, suggests artist names already in Jellyfin, and warns before adding an album Jellyfin already has. It never overwrites an existing folder.
+With the Jellyfin API key set in MusicSeerr's settings, MusicSeerr starts a Jellyfin library scan after each import and warns before adding an album Jellyfin already has. It never overwrites an existing folder.
 
 ## Signing in with Authentik
 

@@ -10,7 +10,6 @@ import {
   searchForUpload,
   startCustomImport,
   startImport,
-  suggestArtists,
   uploadedImagePath,
   uploadsConfigured,
 } from '@server/lib/musicUploads';
@@ -52,11 +51,6 @@ musicUploadRoutes.post('/', async (req, res, next) => {
     });
     next({ status: 500, message: 'Could not start the upload.' });
   }
-});
-
-musicUploadRoutes.get('/artists', async (req, res) => {
-  const term = String(req.query.q ?? '').trim();
-  return res.status(200).json(term ? await suggestArtists(term) : []);
 });
 
 musicUploadRoutes.get<{ id: string }>('/:id', async (req, res, next) => {

@@ -392,7 +392,6 @@
   "components.MusicUpload.CustomEditor.addAnyway": "Add anyway",
   "components.MusicUpload.CustomEditor.album": "Album title",
   "components.MusicUpload.CustomEditor.artist": "Artist",
-  "components.MusicUpload.CustomEditor.artistHint": "Pick a suggestion if the artist is already in your library.",
   "components.MusicUpload.CustomEditor.back": "Back to album matching",
   "components.MusicUpload.CustomEditor.chooseCover": "Choose image",
   "components.MusicUpload.CustomEditor.cover": "Cover",

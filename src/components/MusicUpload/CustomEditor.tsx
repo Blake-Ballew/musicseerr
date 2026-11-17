@@ -10,14 +10,12 @@ import type {
 import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
-import useSWR from 'swr';
 
 const messages = defineMessages('components.MusicUpload.CustomEditor', {
   heading: 'Add with your own details',
   explain:
     'For music that isn’t in MusicBrainz. The files are re-tagged with what you enter here and go straight to Jellyfin, skipping Lidarr.',
   artist: 'Artist',
-  artistHint: 'Pick a suggestion if the artist is already in your library.',
   type: 'Type',
   typeAlbum: 'Album',
   typeEP: 'EP',
@@ -120,12 +118,6 @@ const CustomEditor = ({
       if (coverPreview) URL.revokeObjectURL(coverPreview);
     },
     [coverPreview]
-  );
-
-  const { data: artistSuggestions } = useSWR<string[]>(
-    artist.trim().length >= 2
-      ? `/api/v1/music/uploads/artists?q=${encodeURIComponent(artist.trim())}`
-      : null
   );
 
   const included = rows.filter((r) => r.include);
@@ -295,17 +287,7 @@ const CustomEditor = ({
               required
               value={artist}
               onChange={(e) => setArtist(e.target.value)}
-              list={`artists-${upload.id}`}
-              autoComplete="off"
             />
-            <datalist id={`artists-${upload.id}`}>
-              {artistSuggestions?.map((name) => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
-            <span className="mt-1 block text-xs text-gray-400">
-              {intl.formatMessage(messages.artistHint)}
-            </span>
           </label>
           <label>
             <span className={label}>{intl.formatMessage(messages.type)}</span>

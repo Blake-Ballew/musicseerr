@@ -907,12 +907,6 @@ const jellyfinClient = () => {
     : null;
 };
 
-/** Artist names already in Jellyfin, so one artist is spelled one way */
-export const suggestArtists = async (term: string) =>
-  (await jellyfinClient()
-    ?.searchAlbumArtists(term)
-    .catch(() => [])) ?? [];
-
 /** Albums in Jellyfin (from either library folder) that match these */
 const findDuplicates = async (c: CustomImport) => {
   const jf = jellyfinClient();

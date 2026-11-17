@@ -473,14 +473,6 @@ class JellyfinAPI extends ExternalAPI {
     await this.axios.post('/Library/Refresh');
   }
 
-  public async searchAlbumArtists(term: string): Promise<string[]> {
-    const { data } = await this.axios.get<{ Items: { Name: string }[] }>(
-      '/Artists/AlbumArtists',
-      { params: { SearchTerm: term, Limit: 10 } }
-    );
-    return data.Items.map((i) => i.Name);
-  }
-
   public async searchMusicAlbums(
     term: string
   ): Promise<{ name: string; albumArtist?: string }[]> {
